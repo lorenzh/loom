@@ -36,7 +36,7 @@ When in doubt: if it requires an external service or adds a new dependency to co
 ## Getting started
 
 ```sh
-git clone https://github.com/hiloagent/loom
+git clone https://github.com/lorenzh/loom
 cd loom
 bun install
 bun run build
@@ -45,12 +45,14 @@ bun test
 
 ## Development workflow
 
-1. Fork the repo
-2. Create a branch: `git checkout -b feat/your-feature`
-3. Make your changes
-4. Run tests: `bun test`
-5. Run typecheck: `bun run typecheck`
-6. Open a PR against `main`
+We follow [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow):
+
+1. Create a branch: `git checkout -b feat/your-feature`
+2. Make your changes, committing each logical change separately
+3. Run tests: `bun test`
+4. Run lint/format check: `bun run check`
+5. Open a PR against `main`
+6. Once merged, the branch is automatically deleted
 
 ## Commits
 
@@ -65,6 +67,17 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) with [gitmoj
 ```
 
 Common prefixes: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
+
+## Pull requests
+
+PRs are squash-merged into `main`, so the **PR title becomes the commit message**. Use the same gitmoji + Conventional Commits format for PR titles:
+
+```
+✨ feat: add inbox watcher polling interval config
+🐛 fix: resolve biome lint errors
+```
+
+Use the PR body for details — keep the title short (under 70 characters).
 
 ## ADRs
 
