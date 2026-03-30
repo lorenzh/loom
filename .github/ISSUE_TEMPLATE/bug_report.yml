@@ -1,0 +1,44 @@
+name: Bug Report
+description: Report a bug in loom
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the issue.
+      placeholder: |
+        1. Run `loom spawn ...`
+        2. Send a message with `loom send ...`
+        3. See error in `agents/<name>/crashes/`
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `loom --version` or package version
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Logs, agent directory contents, screenshots, etc. Redact any secrets.
