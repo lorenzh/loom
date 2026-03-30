@@ -58,7 +58,7 @@ test("send writes valid JSON to the inbox", async () => {
   expect(files).toHaveLength(1);
   expect(files[0]).toEndWith(".msg");
 
-  const raw = await Bun.file(join(inboxDir, files[0])).json();
+  const raw = await Bun.file(join(inboxDir, files[0] as string)).json();
   expect(raw).toEqual(msg);
 });
 
@@ -86,7 +86,7 @@ test("read parses a valid message file", async () => {
   const inboxDir = join(root, AGENT, "inbox");
   const files = await list(inboxDir);
 
-  const parsed = await read(inboxDir, files[0]);
+  const parsed = await read(inboxDir, files[0] as string);
   expect(parsed).toEqual(msg);
 });
 
@@ -103,7 +103,7 @@ test("consume reads and moves message to .processed", async () => {
   const msg = await send(root, AGENT, "sender", "consume test");
   const inboxDir = join(root, AGENT, "inbox");
   const files = await list(inboxDir);
-  const filename = files[0];
+  const filename = files[0] as string;
 
   const result = await consume(inboxDir, filename);
   expect(result).toEqual(msg);
