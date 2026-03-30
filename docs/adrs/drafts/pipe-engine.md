@@ -59,6 +59,38 @@ $LOOM_HOME/pipes/
 
 Each line: `{"msg":"1742900000000-01HX","at":"2026-03-26T05:01:00Z"}`
 
+### Cursor-based scanning
+
+To avoid scanning the entire outbox on every poll cycle, the pipe engine
+maintains a **cursor** per pipe — the filename of the last forwarded message.
+Since filenames use `{timestamp_ms}-{ulid}.msg` format and ULIDs sort
+lexicographically, the cursor is a simple string comparison:
+
+```
+cursor = "1742900000000-01JBABC"
+
+readdir(outbox/)
+  .filter(f => f > cursor)    // only files newer than cursor
+  .sort()                     // oldest first
+  // forward each, update cursor
+```
+
+The cursor is the last entry in the tracking JSONL — no separate file needed.
+On supervisor restart, the pipe engine reads the last line of each tracking
+file to restore its cursor position.
+
+### Pipes require a supervisor
+
+The pipe engine only runs inside the supervisor process. Pipes are active
+when agents are managed via `loom up` or `loom run --detach` (see ADR-006).
+
+Foreground agents (`loom run` without `--detach`) have no pipe engine. For
+one-off piping in this mode, operators can use shell tools:
+
+```sh
+loom read researcher --follow | loom send writer --stdin
+```
+
 ### Copy vs. symlink
 
 Options for forwarding:
@@ -72,6 +104,23 @@ Decision: **copy**. Reasons:
 - Symlinks add indirection; if the target moves, they break.
 - Hard links don't work across filesystems (edge case, but possible).
 - Cost: minimal — messages are small text files.
+
+The copy algorithm with deduplication:
+
+```
+For each .msg file in source outbox/ (newer than cursor):
+  1. Does file exist in destination inbox/?              → skip
+  2. Does file exist in destination inbox/.processed/?   → skip
+  3. Does file exist in destination inbox/.in-progress/? → skip
+  4. Is filename in tracking log?                        → skip
+  5. Write to destination inbox/{filename}.tmp            (atomic write)
+  6. Rename .tmp → .msg                                  (atomic commit)
+  7. Append filename to tracking log                     (durable record)
+  8. Update cursor
+```
+
+If the supervisor crashes between step 6 and 7, the next startup detects the
+file already in the destination inbox (step 1) and skips it. No duplicates.
 
 ### Pipe declaration
 

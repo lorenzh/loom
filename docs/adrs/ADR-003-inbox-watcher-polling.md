@@ -25,22 +25,54 @@ The implementation is split into two layers:
   the agent name prepended: `(agentName, filename, message)`. This is the multi-agent
   coordinator.
 
-Consumed files are moved to `inbox/.processed/` rather than deleted — they remain
-readable for debugging.
+Message processing uses a three-phase lifecycle to guarantee reliable delivery
+with idempotent restart recovery:
+
+```
+inbox/
+  {ts}-{ulid}.msg           ← pending — not yet claimed
+  .in-progress/
+    {ts}-{ulid}.msg         ← claimed — runner is processing this now
+  .processed/
+    {ts}-{ulid}.msg         ← done — successfully processed
+  .failed/
+    {ts}-{ulid}.msg         ← failed — exhausted all retries
+    {ts}-{ulid}.msg.error.json  ← companion error details
+  .unreadable/
+    {ts}-{ulid}.msg         ← could not be parsed as valid JSON
+```
 
 ```
 InboxWatcher.poll()
   list *.msg files in inbox/ (sorted by filename → oldest first)
   for each file:
     read + parse JSON
-    move to inbox/.processed/
+    move to inbox/.in-progress/         ← claim the message
     emit('message', filename, message)
+    (runner processes the message, writes response to outbox/)
+    move to inbox/.processed/           ← acknowledge completion
 
 InboxRouter.add(agent)
   create InboxWatcher.forAgent(home, agent)
   forward events with agent name prefix
   start watcher
 ```
+
+### Restart recovery
+
+On startup, the runner checks `inbox/.in-progress/` for messages that were
+mid-processing when it last crashed:
+
+```
+for each file in inbox/.in-progress/:
+  scan outbox/ for any message with in_reply_to == filename
+  if found → response already written, just move to .processed/
+  if not found → processing did not complete, move back to inbox/ for reprocessing
+```
+
+This provides at-least-once delivery with no duplicate responses: if the outbox
+already contains the response, the runner skips reprocessing and just finishes
+the acknowledgment.
 
 ## Rationale
 

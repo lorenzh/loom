@@ -23,20 +23,41 @@ loom needs a supervisor that:
 
 ### Supervisor process
 
-`loom supervisor` runs as a long-lived process. It reads agent definitions from
-`$LOOM_HOME/agents/` and maintains a watch loop.
+The supervisor is a **process manager only** — it spawns runners, detects crashes,
+restarts with backoff, and runs the pipe engine (ADR pipe-engine). It does NOT
+mediate messages between agents; runners are self-sufficient (see ADR-005).
 
 The supervisor is itself an OS process with a PID written to `$LOOM_HOME/supervisor.pid`.
-If the supervisor dies, agents continue running — they just won't be restarted on next
-crash until the supervisor is restarted.
+If the supervisor dies, runners continue running — they keep polling their inboxes and
+processing messages. They just lose restart protection and the pipe engine.
+
+### Supervisor lifecycle
+
+The supervisor operates in one of two modes:
+
+**Systemd-managed (server/homelab):** Registered as a systemd service, runs
+persistently. On system reboot, systemd starts the supervisor, which reads agent
+state from the filesystem and restarts agents that weren't explicitly stopped.
+
+**On-demand (developer machine):** Started automatically by the first
+`loom run --detach` command. Exits when the last managed agent stops. No
+orphan daemon lingers on the developer's machine.
+
+### How the supervisor spawns agents
+
+The supervisor spawns each agent as a separate OS process via `Bun.spawn()`.
+Each runner is a child of the supervisor and manages its own inbox, outbox,
+logs, and status files (see ADR-005).
 
 ### Health check
 
-Every `heartbeatIntervalMs` (default 5000ms), the supervisor checks each registered agent:
+The supervisor detects agent crashes via child process exit events — when
+`Bun.spawn()` creates a child, the supervisor receives an exit event when
+that child dies. No polling is required for agents spawned by the supervisor.
 
-1. Read `agents/{name}/pid` — get the OS PID
-2. Check if that PID is alive (`process.kill(pid, 0)` — signal 0, no-op, just checks existence)
-3. If dead → emit `'agent:died'` event and begin restart logic
+On startup (or restart), the supervisor re-adopts agents that were already
+running by reading their PID files and verifying the processes are alive
+via `process.kill(pid, 0)`.
 
 ### Restart policy
 
@@ -108,7 +129,18 @@ my-agent        running     qwen3.5:9b      3         2m
 news-monitor    dead        qwen2.5:3b      11        —
 ```
 
-### Startup on boot
+### Startup behaviour
+
+On startup, the supervisor reads `$LOOM_HOME/agents/*/status` to determine which
+agents to (re)start:
+
+- `stopped` → **leave stopped** — user explicitly stopped this agent, do not touch
+- Any other status (`running`, `idle`, `error`, `dead`, `restarting`) →
+  **restart if the agent's restart policy allows it**
+
+The restart counter resets on supervisor startup. This means `dead` agents (those
+that hit `maxRestarts` in a previous supervisor session) get a fresh chance after
+a system reboot or supervisor restart.
 
 The supervisor does not install itself as a system service. That is the operator's job.
 A systemd unit file template is provided in `docs/examples/loom-supervisor.service`.
@@ -122,10 +154,9 @@ A systemd unit file template is provided in `docs/examples/loom-supervisor.servi
 - `restart: never` supports one-shot or batch agents that should not loop
 
 **Bad:**
-- The supervisor is itself a single point of failure. If it dies, agents are not
-  restarted. Mitigated by running the supervisor under systemd (which will restart it).
-- Heartbeat polling adds 5 seconds of worst-case detection latency. An agent could be
-  dead for up to 5 seconds before the supervisor notices.
+- The supervisor is itself a single point of failure. If it dies, agents keep running
+  but lose restart protection and pipe forwarding. Mitigated by running the supervisor
+  under systemd (which will restart it).
 - Crash files accumulate. A future `loom gc` command should compact old crash records.
 
 ## Alternatives considered
@@ -135,8 +166,15 @@ Possible but requires root and system configuration. loom targets developer mach
 and homelab servers where operators may not have root, and where one binary should
 "just work". Rejected for the default path; supported as an optional deployment mode.
 
-**Listening to child process `'exit'` events:**
-Requires the supervisor to be the direct parent of all agents (spawned via `fork`).
-This ties agent lifetime to supervisor lifetime — if the supervisor restarts, it
-loses track of already-running agents. File-based PID tracking survives supervisor
-restarts. Rejected in favour of PID polling.
+**PID polling instead of child exit events:**
+The supervisor could poll agent PIDs periodically instead of relying on child exit
+events. This would decouple agent lifetime from supervisor lifetime but adds detection
+latency (up to 5 seconds worst case). The hybrid approach was chosen: child exit events
+for agents spawned by the supervisor (immediate detection), PID polling only for
+re-adopting agents on supervisor restart.
+
+**Supervisor as message mediator (stdin/stdout dispatch):**
+The supervisor could watch inboxes and dispatch messages to runners via stdin, reading
+responses from stdout. Rejected because it makes the supervisor a critical path for
+all message processing and prevents runners from working standalone. Self-sufficient
+runners (ADR-005) are simpler and more resilient.

@@ -16,11 +16,15 @@ The loom process table is a directory. Each agent has a subdirectory under `$LOO
 ```
 $LOOM_HOME/agents/{name}/
   pid           plain text — current OS process ID, empty if not running
-  status        plain text — one of: running | idle | dead | error | restarting
+  status        plain text — one of: running | idle | stopped | dead | error | restarting
   model         plain text — model identifier in use
   started_at    plain text — ISO 8601 timestamp
   stopped_at    plain text — ISO 8601 timestamp, empty if still running
   inbox/        directory — incoming messages as .msg files
+    .in-progress/ — messages currently being processed by the runner
+    .processed/   — successfully processed messages
+    .failed/      — messages that failed after all retries (with .error.json companions)
+    .unreadable/  — messages that could not be parsed
   outbox/       directory — outgoing messages as .msg files
   memory/       directory — persistent key-value state as .json files
   logs/         directory — append-only NDJSON log files, one per day
@@ -35,10 +39,16 @@ The runtime provides two layers for working with the process table:
 
 Message files in `inbox/` and `outbox/` follow this naming convention:
 ```
-{timestamp_ns}-{random_hex}.msg    e.g. 1742860000000000000-a3f9c1d2.msg
+{timestamp_ms}-{ulid}.msg    e.g. 1742860000000-01JBXYZ9K2.msg
 ```
 
+The timestamp prefix provides human-readable "when" context in directory listings.
+The [ULID](https://github.com/ulid/spec) provides globally unique, lexicographically
+sortable identifiers without coordination between agents.
+
 ### Message file format
+
+**Inbox message:**
 
 ```json
 {
@@ -50,6 +60,25 @@ Message files in `inbox/` and `outbox/` follow this naming convention:
   "metadata": {}
 }
 ```
+
+**Outbox message (response):**
+
+```json
+{
+  "v": 1,
+  "id": "b7c4e1f2a9d3...",
+  "from": "researcher",
+  "ts": "2026-03-25T00:00:03.000Z",
+  "in_reply_to": "1742860000000-01JBXYZ9K2.msg",
+  "body": "Unix was created at Bell Labs in 1969...",
+  "metadata": {}
+}
+```
+
+The `in_reply_to` field references the inbox filename that triggered this response.
+It is used for idempotent restart recovery: when a runner restarts, it checks
+`inbox/.in-progress/` against outbox messages with matching `in_reply_to` to
+determine if reprocessing is needed (see ADR-005).
 
 The `v` field is the schema version. It allows safe migration when the message format changes:
 - Missing `v` → treated as `v: 1` (backwards compat for files written before versioning was added)
@@ -64,6 +93,27 @@ If a `.msg` file contains invalid JSON or fails schema validation, the runtime:
 3. Continues processing remaining inbox messages — one bad file does not block the queue
 
 This means operators can always inspect what went wrong with `cat inbox/.unreadable/somefile.msg`.
+
+### Failed message handling
+
+If a message is valid but processing fails after all retries (e.g. LLM timeout,
+repeated API errors), the runner:
+1. Moves it to `inbox/.failed/{original_filename}`
+2. Writes a companion error file `inbox/.failed/{original_filename}.error.json`:
+   ```json
+   {
+     "ts": "2026-03-25T05:01:03Z",
+     "attempts": 3,
+     "last_error": "anthropic API timeout after 30s",
+     "error_type": "transient"
+   }
+   ```
+3. Logs a structured error to the agent's daily log
+
+An operator can reprocess failed messages by moving them back to `inbox/`:
+```sh
+mv agents/researcher/inbox/.failed/1742860000000-01JBXYZ9K2.msg agents/researcher/inbox/
+```
 
 ## Consequences
 
