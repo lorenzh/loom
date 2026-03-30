@@ -6,6 +6,19 @@ loom is an early-stage project. Contributions are welcome — but read this firs
 
 loom has a strong opinion: **agents are processes, state is files, everything is observable**. Before proposing a feature, ask: does this make the system simpler or more complex? Does it respect the Unix philosophy? If a feature requires a database, a cloud service, or a daemon that can't be understood by reading files — it probably doesn't belong in core.
 
+## Monorepo structure
+
+```
+packages/
+  runtime/   → @losoft/loom-runtime  (zero-dependency core primitives)
+  runner/    → @losoft/loom-runner   (LLM provider abstraction, depends on runtime)
+tools/       → build and publish scripts
+docs/adrs/   → architecture decision records (ADR-001 through ADR-010)
+.githooks/   → shared git hooks
+```
+
+Each package builds for both **Bun** (`dist/bun/`) and **Node.js** (`dist/node/`). The `package.pub.json` in each package defines the dual-target exports. The `tools/build-publish-package.ts` script handles the publish build — it merges `package.json` + `package.pub.json`, strips dev fields, and writes the final package to `dist/`.
+
 ## What we want
 
 - Bug fixes
@@ -17,21 +30,28 @@ loom has a strong opinion: **agents are processes, state is files, everything is
 
 ## What goes in core vs plugins
 
-**Core** (`packages/runtime`, `packages/cli`):
-- Process table
-- Inbox watcher
-- Supervisor
-- CLI (`loom ps`, `loom spawn`, `loom send`, etc.)
-- Message format
+**Core — `@losoft/loom-runtime`** (`packages/runtime`):
+- `AgentProcess` (filesystem-backed agent state)
+- `ProcessTable`
+- `InboxWatcher` (polling-based)
+- `InboxRouter`
+- Message utilities (`send`, `read`, `consume`, `list`, `quarantine`)
 - `loom.yml` parsing
+- **Zero external runtime dependencies** — must run with nothing beyond Bun installed
 
-**Plugin** (separate packages):
-- Model providers beyond Ollama/Anthropic
+**Core — `@losoft/loom-runner`** (`packages/runner`):
+- `AgentRunner` (connects inbox to LLM)
+- `Provider` / `ProviderRegistry` interfaces
+- `resolveProvider()` for model routing by prefix (`ollama/`, `anthropic/`, `openai/`, `openrouter/`)
+- May depend on `@losoft/loom-runtime` (workspace dependency)
+
+**Plugin** (separate `@losoft/loom-*` packages):
+- Model providers beyond the built-in set
 - Transport plugins (Telegram, Slack, webhooks)
 - MCP server integrations
 - Custom triggers
 
-When in doubt: if it requires an external service or adds a new dependency to core, it's a plugin.
+When in doubt: if it requires an external service or adds a new dependency to runtime, it's a plugin.
 
 ## Getting started
 
@@ -53,6 +73,26 @@ We follow [GitHub Flow](https://docs.github.com/en/get-started/using-github/gith
 4. Run lint/format check: `bun run check`
 5. Open a PR against `main`
 6. Once merged, the branch is automatically deleted
+
+### Pre-commit hook
+
+A shared pre-commit hook at `.githooks/pre-commit` is automatically configured after `bun install` (via the `prepare` script). It runs:
+
+1. `bun biome check --staged` — lint and format staged files
+2. `bun run build` — build all packages
+3. `bun test` — run all tests
+
+If any step fails, the commit is rejected. This means commits may take a moment — that's expected.
+
+### CI
+
+PRs and pushes to `main` trigger three parallel CI jobs:
+
+- **Lint & Format** — `bun run check`
+- **Build** — `bun run build`
+- **Test** — `bun test` (runs after build)
+
+All three must pass before merging. PRs also receive automated code review.
 
 ## Commits
 
@@ -79,6 +119,12 @@ PRs are squash-merged into `main`, so the **PR title becomes the commit message*
 
 Use the PR body for details — keep the title short (under 70 characters).
 
+A PR template is provided automatically. Before requesting review, ensure the checklist passes:
+
+- [ ] `bun run check` passes
+- [ ] `bun run build` passes
+- [ ] `bun test` passes
+
 ## ADRs
 
 Significant design decisions need an ADR in `docs/adrs/`. Use this template:
@@ -102,15 +148,26 @@ What are the tradeoffs?
 What did we reject and why?
 ```
 
-ADR numbers are sequential. Check existing ADRs before numbering yours.
+ADR numbers are sequential. There are currently 10 ADRs (ADR-001 through ADR-010) in `docs/adrs/`. Check existing ADRs before numbering yours.
 
 ## Code style
 
-- TypeScript, strict mode
+- TypeScript, strict mode (`noUncheckedIndexedAccess` is enabled — index access returns `T | undefined`)
 - Bun runtime — no Node-specific APIs unless there's no Bun equivalent
 - No external runtime dependencies in `@losoft/loom-runtime` — it must run with zero installs beyond Bun
 - Prefer explicit over clever
 - Every public function needs a one-line JSDoc comment
+- Modules should have a `@file` / `@module` JSDoc header
+
+### Formatting (Biome)
+
+Biome enforces formatting — run `bun run fix` to auto-fix. Key settings:
+
+- 2-space indentation, 100-char line width
+- Double quotes, always semicolons, trailing commas
+- Arrow function parentheses always required
+
+See `biome.json` for the full config.
 
 ## Tests
 
@@ -118,13 +175,46 @@ ADR numbers are sequential. Check existing ADRs before numbering yours.
 - Test the filesystem — loom's core promise is filesystem observability, so tests should verify files are written correctly, not just return values
 - Use `tmp` directories in tests, clean up after
 
+Example test pattern:
+
+```ts
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+let root: string;
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), "my-test-"));
+  // set up directory structure as needed
+});
+
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("writes expected file to disk", async () => {
+  // call your function
+  // assert on filesystem state, not just return values
+});
+```
+
+Run tests:
+
+```sh
+bun test                       # all tests
+bun test --filter <pattern>    # single test file matching pattern
+```
+
 ## Opening issues
 
-Use the issue templates. For bugs, include:
+Use the issue templates (bug report or feature request). For bugs, include:
+- Description and expected behavior
+- Steps to reproduce
 - loom version (`loom --version`)
-- OS and architecture
-- Minimal reproduction steps
-- Contents of relevant agent directories (redact secrets)
+- OS (Linux, macOS, or Windows)
+- Relevant logs, agent directory contents, or screenshots (redact secrets)
 
 ## License
 
