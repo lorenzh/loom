@@ -8,6 +8,7 @@
   "scripts": {
     "build": "bun run --filter './packages/*' build",
     "build:pkg": "bun tools/build-publish-package.ts packages/runtime && bun tools/build-publish-package.ts packages/runner",
+    "prepare": "git config core.hooksPath .githooks",
     "check": "biome check .",
     "fix": "biome check --write .",
     "format": "biome format --write .",

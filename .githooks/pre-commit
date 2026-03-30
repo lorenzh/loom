@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🔍 Lint (staged files)..."
+bun biome check --staged
+
+echo "🔨 Build..."
+bun run build
+
+echo "🧪 Test..."
+bun test
