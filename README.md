@@ -229,7 +229,6 @@ Architecture decision records live in [`docs/adrs/`](docs/adrs/):
 | [ADR-008](docs/adrs/ADR-008-filesystem-state-store.md) | Filesystem as state store |
 | [ADR-009](docs/adrs/ADR-009-plugin-protocol.md) | Plugin protocol — tools as executables |
 | [ADR-010](docs/adrs/ADR-010-pipe-engine.md) | Pipe engine — outbox-to-inbox forwarding |
-| [ADR-011](docs/adrs/ADR-011-dual-target-build.md) | Dual-target build (Bun + Node.js) |
 
 ---
 
