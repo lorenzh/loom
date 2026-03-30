@@ -1,4 +1,4 @@
-# ADR-009: Plugin Protocol — Tools as Executables
+# Plugin Protocol — Tools as Executables
 
 **Status:** Draft
 **Date:** 2026-03-26

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 echo "🔍 Lint (staged files)..."
-bun biome check --staged
+bun biome check --staged --no-errors-on-unmatched
 
 echo "🔨 Build..."
 bun run build

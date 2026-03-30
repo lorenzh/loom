@@ -171,7 +171,7 @@ loom spawn my-agent --model openrouter/anthropic/claude-3.5-sonnet
 | `openai/` | OpenAI | `OPENAI_API_KEY`, `OPENAI_BASE_URL` |
 | `openrouter/` | OpenRouter | `OPENROUTER_API_KEY` |
 
-See [`docs/adrs/ADR-007-model-routing.md`](docs/adrs/ADR-007-model-routing.md) for the full model routing spec.
+See [`docs/adrs/drafts/model-routing.md`](docs/adrs/drafts/model-routing.md) for the full model routing spec.
 
 ---
 
@@ -215,7 +215,9 @@ they just won't be restarted until the supervisor comes back.
 
 ## Design decisions
 
-Architecture decision records live in [`docs/adrs/`](docs/adrs/):
+Architecture decision records live in [`docs/adrs/`](docs/adrs/). Accepted ADRs are numbered; drafts live in [`docs/adrs/drafts/`](docs/adrs/drafts/) and receive a number once approved.
+
+### Accepted
 
 | ADR | Title |
 |-----|-------|
@@ -223,12 +225,17 @@ Architecture decision records live in [`docs/adrs/`](docs/adrs/):
 | [ADR-002](docs/adrs/ADR-002-filesystem-as-process-table.md) | Filesystem as process table |
 | [ADR-003](docs/adrs/ADR-003-inbox-watcher-polling.md) | Inbox watcher via polling |
 | [ADR-004](docs/adrs/ADR-004-supervisor-and-restart-policy.md) | Supervisor and restart policy |
-| [ADR-005](docs/adrs/ADR-005-loom-yml-weave-config.md) | loom.yml weave config format |
-| [ADR-006](docs/adrs/ADR-006-plugin-model.md) | Plugin and extension model |
-| [ADR-007](docs/adrs/ADR-007-model-routing.md) | Model routing and provider abstraction |
-| [ADR-008](docs/adrs/ADR-008-filesystem-state-store.md) | Filesystem as state store |
-| [ADR-009](docs/adrs/ADR-009-plugin-protocol.md) | Plugin protocol — tools as executables |
-| [ADR-010](docs/adrs/ADR-010-pipe-engine.md) | Pipe engine — outbox-to-inbox forwarding |
+
+### Drafts
+
+| Proposal | Title |
+|----------|-------|
+| [loom-yml-weave-config](docs/adrs/drafts/loom-yml-weave-config.md) | loom.yml weave config format |
+| [plugin-model](docs/adrs/drafts/plugin-model.md) | Plugin and extension model |
+| [model-routing](docs/adrs/drafts/model-routing.md) | Model routing and provider abstraction |
+| [filesystem-state-store](docs/adrs/drafts/filesystem-state-store.md) | Filesystem as state store |
+| [plugin-protocol](docs/adrs/drafts/plugin-protocol.md) | Plugin protocol — tools as executables |
+| [pipe-engine](docs/adrs/drafts/pipe-engine.md) | Pipe engine — outbox-to-inbox forwarding |
 
 ---
 

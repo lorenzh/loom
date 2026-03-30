@@ -1,4 +1,4 @@
-# ADR-010: Pipe engine — wiring agent outboxes to inboxes
+# Pipe engine — wiring agent outboxes to inboxes
 
 **Status:** Draft
 **Date:** 2026-03-26

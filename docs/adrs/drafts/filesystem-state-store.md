@@ -1,4 +1,4 @@
-# ADR-008: Filesystem as State Store
+# Filesystem as State Store
 
 **Status:** Draft
 **Date:** 2026-03-26
