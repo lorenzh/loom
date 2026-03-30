@@ -1,8 +1,8 @@
-import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { send, read, list, consume, quarantine, isMessage } from "./message";
+import { join } from "node:path";
+import { consume, isMessage, list, quarantine, read, send } from "./message";
 
 let root: string;
 const AGENT = "test-agent";
@@ -58,7 +58,7 @@ test("send writes valid JSON to the inbox", async () => {
   expect(files).toHaveLength(1);
   expect(files[0]).toEndWith(".msg");
 
-  const raw = await Bun.file(join(inboxDir, files[0]!)).json();
+  const raw = await Bun.file(join(inboxDir, files[0])).json();
   expect(raw).toEqual(msg);
 });
 
@@ -86,7 +86,7 @@ test("read parses a valid message file", async () => {
   const inboxDir = join(root, AGENT, "inbox");
   const files = await list(inboxDir);
 
-  const parsed = await read(inboxDir, files[0]!);
+  const parsed = await read(inboxDir, files[0]);
   expect(parsed).toEqual(msg);
 });
 
@@ -105,7 +105,7 @@ test("consume reads and moves message to .processed", async () => {
   const files = await list(inboxDir);
   const filename = files[0];
 
-  const result = await consume(inboxDir, filename!);
+  const result = await consume(inboxDir, filename);
   expect(result).toEqual(msg);
 
   // Original file should be gone
@@ -113,7 +113,7 @@ test("consume reads and moves message to .processed", async () => {
   expect(remaining).toEqual([]);
 
   // Should exist in .processed
-  const processedFile = Bun.file(join(inboxDir, ".processed", filename!));
+  const processedFile = Bun.file(join(inboxDir, ".processed", filename));
   expect(await processedFile.exists()).toBe(true);
 });
 

@@ -1,7 +1,7 @@
-import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AgentProcess } from "./agent-process";
 
 let home: string;
@@ -100,7 +100,9 @@ test("files on disk use snake_case names", () => {
 
   expect(existsSync(join(home, "alice", "started_at"))).toBe(true);
   expect(existsSync(join(home, "alice", "stopped_at"))).toBe(true);
-  expect(readFileSync(join(home, "alice", "started_at"), "utf8").trim()).toBe("2026-01-01T00:00:00.000Z");
+  expect(readFileSync(join(home, "alice", "started_at"), "utf8").trim()).toBe(
+    "2026-01-01T00:00:00.000Z",
+  );
 });
 
 test("entry returns full snapshot", () => {

@@ -1,7 +1,7 @@
-import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { InboxWatcher } from "./inbox-watcher";
 import type { Message } from "./message";
 
