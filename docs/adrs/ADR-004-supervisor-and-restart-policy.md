@@ -129,6 +129,50 @@ my-agent        running     qwen3.5:9b      3         2m
 news-monitor    dead        qwen2.5:3b      11        —
 ```
 
+### CLI-to-supervisor communication
+
+The filesystem is the source of truth for all communication between the CLI
+and the supervisor. The CLI writes state to the filesystem; the supervisor
+reads it. A `SIGHUP` signal nudges the supervisor to re-scan immediately.
+
+This follows the pattern used by many Unix daemons (`nginx -s reload`,
+`sshd` config reload): the filesystem holds the config, the signal says
+"look now."
+
+**Starting a new agent (`loom run --detach`):**
+
+```
+1. CLI creates agents/{name}/ directory + config files (model, prompt, etc.)
+2. CLI writes status: pending
+3. CLI starts supervisor if not running (checks supervisor.pid)
+4. CLI sends SIGHUP to supervisor PID → "re-scan agent dirs"
+5. Supervisor detects new agent with status: pending
+6. Supervisor spawns runner
+7. Runner writes status: running
+```
+
+If the SIGHUP is missed (supervisor not yet ready, signal lost), the
+supervisor picks up the new agent on its next periodic scan. The signal
+is an optimization, not a requirement.
+
+**Stopping an agent (`loom stop`):**
+
+```
+1. CLI writes status: stopped to agents/{name}/status
+2. CLI sends SIGTERM to runner PID (from agents/{name}/pid)
+3. Runner receives SIGTERM, shuts down gracefully, exits
+4. Supervisor sees child exit, reads status: stopped → does not restart
+```
+
+The supervisor does not need a signal here — it learns about the stop via
+the child exit event and the `stopped` status file.
+
+**Supervisor periodic scan:**
+
+As a fallback, the supervisor periodically scans `$LOOM_HOME/agents/*/status`
+(default every 5 seconds) to detect changes it may have missed. This ensures
+eventual consistency even if signals are lost.
+
 ### Startup behaviour
 
 On startup, the supervisor reads `$LOOM_HOME/agents/*/status` to determine which

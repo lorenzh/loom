@@ -67,11 +67,17 @@ in `loom.yml` and wires the pipe engine for inter-agent communication.
 
 When `loom run --detach` is used:
 
-1. CLI checks if a supervisor is already running (`$LOOM_HOME/supervisor.pid`)
-2. If no supervisor → start one
-3. Register the agent with the supervisor
-4. Supervisor spawns the runner as a child process
-5. CLI exits. Agent keeps running under supervision.
+1. CLI creates `$LOOM_HOME/agents/{name}/` directory and writes config files
+2. CLI writes `status: pending`
+3. CLI checks if a supervisor is already running (`$LOOM_HOME/supervisor.pid`)
+4. If no supervisor → start one
+5. CLI sends `SIGHUP` to supervisor → "re-scan agent directories"
+6. Supervisor detects new agent, spawns the runner
+7. CLI exits. Agent keeps running under supervision.
+
+The CLI communicates with the supervisor via the **filesystem + SIGHUP** pattern
+(see ADR-004). The filesystem is the source of truth; the signal is a nudge to
+act immediately rather than waiting for the next periodic scan.
 
 The on-demand supervisor exits when its last managed agent stops. No orphan
 daemon lingers on the developer's machine.
@@ -100,7 +106,7 @@ writer          idle        qwen3.5:9b      0         5m
 news-monitor    dead        qwen2.5:3b      11        —
 ```
 
-**`loom stop`** writes `status: stopped` to the agent's status file and sends
+**`loom stop`** writes `status: stopped` to the agent's status file, then sends
 SIGTERM to the runner process. The supervisor respects `stopped` status and
 will not restart the agent (see ADR-004).
 
