@@ -95,9 +95,9 @@ test("state round-trip through entries", () => {
   agent.startedAt = "2026-03-25T12:00:00.000Z";
 
   const [entry] = table.entries();
-  expect(entry.pid).toBe(123);
-  expect(entry.status).toBe("running");
-  expect(entry.model).toBe("anthropic/claude-sonnet-4-6");
-  expect(entry.startedAt).toBe("2026-03-25T12:00:00.000Z");
-  expect(entry.stoppedAt).toBeNull();
+  expect(entry?.pid).toBe(123);
+  expect(entry?.status).toBe("running");
+  expect(entry?.model).toBe("anthropic/claude-sonnet-4-6");
+  expect(entry?.startedAt).toBe("2026-03-25T12:00:00.000Z");
+  expect(entry?.stoppedAt).toBeNull();
 });
