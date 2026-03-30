@@ -1,4 +1,4 @@
-# ADR-005: loom.yml — declarative weave configuration
+# loom.yml — declarative weave configuration
 
 **Status:** Draft
 **Date:** 2026-03-25

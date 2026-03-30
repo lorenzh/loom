@@ -13,7 +13,8 @@ packages/
   runtime/   → @losoft/loom-runtime  (zero-dependency core primitives)
   runner/    → @losoft/loom-runner   (LLM provider abstraction, depends on runtime)
 tools/       → build and publish scripts
-docs/adrs/   → architecture decision records (ADR-001 through ADR-010)
+docs/adrs/         → accepted architecture decision records (numbered)
+docs/adrs/drafts/  → draft ADR proposals (unnumbered)
 .githooks/   → shared git hooks
 ```
 
@@ -127,12 +128,20 @@ A PR template is provided automatically. Before requesting review, ensure the ch
 
 ## ADRs
 
-Significant design decisions need an ADR in `docs/adrs/`. Use this template:
+Significant design decisions are tracked as architecture decision records (ADRs).
+
+### Workflow
+
+1. **Propose** — create a new file in `docs/adrs/drafts/` with a descriptive slug (no number). Set its status to `Draft`.
+2. **Review** — the draft is discussed in a PR. Iterate until accepted.
+3. **Accept** — once approved, the file is assigned the next sequential ADR number, renamed to `docs/adrs/ADR-{NNN}-{slug}.md`, and its status is set to `Accepted`.
+
+### Template
 
 ```md
-# ADR-XXX: Title
+# Title
 
-**Status:** Draft | Accepted | Superseded
+**Status:** Draft
 **Date:** YYYY-MM-DD
 
 ## Context
@@ -148,7 +157,7 @@ What are the tradeoffs?
 What did we reject and why?
 ```
 
-ADR numbers are sequential. There are currently 10 ADRs (ADR-001 through ADR-010) in `docs/adrs/`. Check existing ADRs before numbering yours.
+Accepted ADRs (ADR-001 through ADR-004) live in `docs/adrs/`. Draft proposals live in `docs/adrs/drafts/`.
 
 ## Code style
 

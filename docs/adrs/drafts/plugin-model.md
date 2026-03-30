@@ -1,4 +1,4 @@
-# ADR-006: Plugin and extension model
+# Plugin and extension model
 
 **Status:** Draft
 **Date:** 2026-03-25

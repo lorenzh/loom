@@ -1,4 +1,4 @@
-# ADR-007: Model routing and provider abstraction
+# Model routing and provider abstraction
 
 **Status:** Draft
 **Date:** 2026-03-25
