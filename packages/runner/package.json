@@ -1,0 +1,20 @@
+{
+  "name": "@losoft/loom-runner",
+  "description": "Agent runner — connects inbox to LLM to outbox",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build:bun": "bun build ./src/index.ts --outdir ./dist/bun",
+    "build:node": "bun build ./src/index.ts --outdir ./dist/node --format esm --target node --packages external",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "clean": "rm -rf dist",
+    "build": "bun run clean && bun run build:bun && bun run build:node && bun run build:types",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@losoft/loom-runtime": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
