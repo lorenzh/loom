@@ -1,0 +1,18 @@
+{
+  "name": "@losoft/loom-runtime",
+  "main": "src/index.ts",
+  "description": "Core runtime primitives for loom — process table, inbox/outbox, filesystem layout",
+  "type": "module",
+  "scripts": {
+    "build:bun": "bun build ./src/index.ts --outdir ./dist/bun",
+    "build:node": "bun build ./src/index.ts --outdir ./dist/node --format esm --target node --packages external",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "clean": "rm -rf dist",
+    "build": "bun run clean && bun run build:bun && bun run build:node && bun run build:types",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
