@@ -10,16 +10,16 @@
 
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
-import { list, consume, quarantine, type Message } from "./message";
+import { consume, list, type Message, quarantine } from "./message";
 
 export interface InboxWatcherOptions {
-    /** Polling interval in milliseconds (default 200). */
-    pollIntervalMs?: number;
+  /** Polling interval in milliseconds (default 200). */
+  pollIntervalMs?: number;
 }
 
 interface InboxWatcherEventMap {
-    message: [filename: string, message: Message];
-    error: [error: Error];
+  message: [filename: string, message: Message];
+  error: [error: Error];
 }
 
 /**
@@ -31,61 +31,61 @@ interface InboxWatcherEventMap {
  * @fires error When a file cannot be read or parsed.
  */
 export class InboxWatcher extends EventEmitter<InboxWatcherEventMap> {
-    private timer: Timer | null = null;
-    private polling = false;
-    readonly inbox: string;
-    readonly pollIntervalMs: number;
+  private timer: Timer | null = null;
+  private polling = false;
+  readonly inbox: string;
+  readonly pollIntervalMs: number;
 
-    constructor(inbox: string, options?: InboxWatcherOptions) {
-        super();
-        this.inbox = inbox;
-        this.pollIntervalMs = options?.pollIntervalMs ?? 200;
-    }
+  constructor(inbox: string, options?: InboxWatcherOptions) {
+    super();
+    this.inbox = inbox;
+    this.pollIntervalMs = options?.pollIntervalMs ?? 200;
+  }
 
-    /** Runs a single poll cycle: list, consume, and emit for each `.msg` file. */
-    private async poll(): Promise<void> {
-        if (this.polling || !this.timer) return;
-        this.polling = true;
+  /** Runs a single poll cycle: list, consume, and emit for each `.msg` file. */
+  private async poll(): Promise<void> {
+    if (this.polling || !this.timer) return;
+    this.polling = true;
+    try {
+      const files = await list(this.inbox);
+      for (const filename of files) {
+        if (!this.timer) break;
         try {
-            const files = await list(this.inbox);
-            for (const filename of files) {
-                if (!this.timer) break;
-                try {
-                    const message = await consume(this.inbox, filename);
-                    this.emit('message', filename, message);
-                } catch (err) {
-                    await quarantine(this.inbox, filename);
-                    this.emit('error', err instanceof Error ? err : new Error(String(err)));
-                }
-            }
+          const message = await consume(this.inbox, filename);
+          this.emit("message", filename, message);
         } catch (err) {
-            this.emit('error', err instanceof Error ? err : new Error(String(err)));
-        } finally {
-            this.polling = false;
+          await quarantine(this.inbox, filename);
+          this.emit("error", err instanceof Error ? err : new Error(String(err)));
         }
+      }
+    } catch (err) {
+      this.emit("error", err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      this.polling = false;
     }
+  }
 
-    /** Starts polling the inbox directory for new files. */
-    start(): void {
-        this.timer = setInterval(() => this.poll(), this.pollIntervalMs);
-        this.timer.unref();
-    }
+  /** Starts polling the inbox directory for new files. */
+  start(): void {
+    this.timer = setInterval(() => this.poll(), this.pollIntervalMs);
+    this.timer.unref();
+  }
 
-    /** Stops polling the inbox directory. */
-    stop(): void {
-        if (this.timer) {
-            clearInterval(this.timer);
-            this.timer = null;
-        }
+  /** Stops polling the inbox directory. */
+  stop(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
     }
+  }
 
-    /** Whether the watcher is currently active. */
-    get running(): boolean {
-        return this.timer !== null;
-    }
+  /** Whether the watcher is currently active. */
+  get running(): boolean {
+    return this.timer !== null;
+  }
 
-    /** Creates an InboxWatcher scoped to a single agent's inbox directory. */
-    static forAgent(home: string, name: string, options?: InboxWatcherOptions): InboxWatcher {
-        return new InboxWatcher(join(home, name, 'inbox'), options);
-    }
+  /** Creates an InboxWatcher scoped to a single agent's inbox directory. */
+  static forAgent(home: string, name: string, options?: InboxWatcherOptions): InboxWatcher {
+    return new InboxWatcher(join(home, name, "inbox"), options);
+  }
 }
