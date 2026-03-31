@@ -193,6 +193,7 @@ $LOOM_HOME/agents/{name}/
   inbox/
   outbox/
   logs/
+  plugins/            ← plugin scoped directories (plugins/{plugin_name}/)
   workspace/          ← built-in tools are scoped here
 ```
 
@@ -208,16 +209,20 @@ it and passes the path at invocation.
 
 ```
 $LOOM_HOME/agents/{name}/
-  memory/             ← memory plugin's scoped directory
+  plugins/
+    memory/           ← memory plugin's scoped directory
+    browser/          ← browser plugin's scoped directory
   workspace/          ← built-in tools' scope
 ```
 
+All plugin directories live under `plugins/{plugin_name}/`. The runner creates
+the directory on first use and passes the path at invocation.
+
 For example, a **memory** plugin:
-- Declares its scope as `memory/`
-- The runner creates `$LOOM_HOME/agents/{name}/memory/` and passes it as
-  `scope_dir` in the plugin's invocation JSON
+- The runner creates `$LOOM_HOME/agents/{name}/plugins/memory/` and passes it
+  as `scope_dir` in the plugin's invocation JSON
 - The plugin reads/writes within its scoped directory
-- Built-in tools cannot see `memory/`; the memory plugin cannot see `workspace/`
+- Built-in tools cannot see `plugins/`; the memory plugin cannot see `workspace/`
 
 This separation means:
 - **Workspace** = the agent's view of the outside world (project files, data)
@@ -279,8 +284,8 @@ sees read/write/edit/grep/glob in its tool list. This is minor — the LLM
 simply won't use tools that aren't relevant to its task.
 
 **Plugin directory proliferation.** Each plugin gets its own directory under
-the agent's home. Many plugins means many directories. This is manageable —
-directories are cheap, and `ls` shows the full layout.
+`plugins/`. Many plugins means many subdirectories, but they are contained
+under a single parent — `ls agents/{name}/plugins/` shows the full layout.
 
 ## Alternatives considered
 
