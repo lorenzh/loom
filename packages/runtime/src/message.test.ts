@@ -2,7 +2,17 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acknowledge, claim, consume, isMessage, list, quarantine, read, send, sendReply } from "./message";
+import {
+  acknowledge,
+  claim,
+  consume,
+  isMessage,
+  list,
+  quarantine,
+  read,
+  send,
+  sendReply,
+} from "./message";
 
 let root: string;
 const AGENT = "test-agent";
