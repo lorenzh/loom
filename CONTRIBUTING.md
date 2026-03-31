@@ -56,13 +56,26 @@ When in doubt: if it requires an external service or adds a new dependency to ru
 
 ## Getting started
 
+Since you don't have direct push access, you'll need to fork the repo first:
+
+1. **Fork** — click "Fork" on [lorenzh/loom](https://github.com/lorenzh/loom) to create a copy under your own account
+2. **Clone your fork** — `git clone https://github.com/YOUR_USERNAME/loom`
+3. **Install and build:**
+
 ```sh
-git clone https://github.com/lorenzh/loom
 cd loom
 bun install
 bun run build
 bun test
 ```
+
+4. **Add the upstream remote** (so you can pull in future changes):
+
+```sh
+git remote add upstream https://github.com/lorenzh/loom
+```
+
+When you're ready to open a PR, push to your fork and open it against `lorenzh/loom:main`.
 
 ## Development workflow
 
