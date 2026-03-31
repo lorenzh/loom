@@ -60,8 +60,12 @@ in `loom.yml` and wires the pipe engine for inter-agent communication.
 | Mode | Supervisor? | Restart on crash? | Pipe engine? |
 |---|---|---|---|
 | `loom run` (foreground) | No | No | No |
-| `loom run --detach` | Yes | Yes | No (single agent, no pipes) |
+| `loom run --detach` | Yes | Yes | Yes |
 | `loom up` | Yes | Yes | Yes |
+
+The pipe engine runs inside the supervisor. Since `--detach` starts (or reuses)
+a supervisor, pipes are available for detached agents. Multiple detached agents
+sharing the same supervisor can pipe to each other.
 
 ### Detach starts a supervisor on-demand
 
@@ -152,10 +156,10 @@ crashes, it stays dead. This is intentional — foreground mode is for
 development and scripting, not production. The operator sees the crash
 immediately in their terminal.
 
-**No pipe engine without a supervisor.** Pipes between agents only work
-under `loom up` or when agents are detached (supervisor running). A
-foreground `loom run` agent cannot receive piped messages from other
-agents' outboxes. For one-off piping, operators can use shell tools:
+**No pipe engine in foreground mode.** A foreground `loom run` agent (no
+`--detach`) has no supervisor and therefore no pipe engine. It cannot
+receive piped messages from other agents' outboxes. For one-off piping
+in foreground mode, operators can use shell tools:
 `loom read researcher --follow | loom send writer --stdin`.
 
 ## Alternatives considered

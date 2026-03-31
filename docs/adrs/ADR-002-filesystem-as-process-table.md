@@ -39,12 +39,17 @@ The runtime provides two layers for working with the process table:
 
 Message files in `inbox/` and `outbox/` follow this naming convention:
 ```
-{timestamp_ms}-{ulid}.msg    e.g. 1742860000000-01JBXYZ9K2.msg
+{timestamp_ms}-{id}.msg    e.g. 1742860000000-a3f9c1d2e5b87041.msg
 ```
 
 The timestamp prefix provides human-readable "when" context in directory listings.
-The [ULID](https://github.com/ulid/spec) provides globally unique, lexicographically
-sortable identifiers without coordination between agents.
+The `id` segment is a unique identifier for deduplication and sort-order stability.
+
+> **Note:** The current runtime generates `id` as a 16-character truncated hex UUID
+> (`crypto.randomUUID().slice(0, 16)`). A future migration will switch to
+> [ULID](https://github.com/ulid/spec) (Crockford Base32) for lexicographic
+> sortability within the same millisecond. Until then, ordering relies on the
+> timestamp prefix and the existing hex IDs are sufficient for uniqueness.
 
 ### Message file format
 
@@ -53,11 +58,10 @@ sortable identifiers without coordination between agents.
 ```json
 {
   "v": 1,
-  "id": "a3f9c1d2e5b8...",
+  "id": "a3f9c1d2e5b87041",
   "from": "cli",
-  "ts": "2026-03-25T00:00:00.000Z",
-  "body": "hello world",
-  "metadata": {}
+  "ts": 1742860000000,
+  "body": "hello world"
 }
 ```
 
@@ -66,12 +70,11 @@ sortable identifiers without coordination between agents.
 ```json
 {
   "v": 1,
-  "id": "b7c4e1f2a9d3...",
+  "id": "b7c4e1f2a9d31052",
   "from": "researcher",
-  "ts": "2026-03-25T00:00:03.000Z",
-  "in_reply_to": "1742860000000-01JBXYZ9K2.msg",
-  "body": "Unix was created at Bell Labs in 1969...",
-  "metadata": {}
+  "ts": 1742860003000,
+  "in_reply_to": "1742860000000-a3f9c1d2e5b87041.msg",
+  "body": "Unix was created at Bell Labs in 1969..."
 }
 ```
 
@@ -102,7 +105,7 @@ repeated API errors), the runner:
 2. Writes a companion error file `inbox/.failed/{original_filename}.error.json`:
    ```json
    {
-     "ts": "2026-03-25T05:01:03Z",
+     "ts": 1742878863000,
      "attempts": 3,
      "last_error": "anthropic API timeout after 30s",
      "error_type": "transient"
@@ -112,7 +115,7 @@ repeated API errors), the runner:
 
 An operator can reprocess failed messages by moving them back to `inbox/`:
 ```sh
-mv agents/researcher/inbox/.failed/1742860000000-01JBXYZ9K2.msg agents/researcher/inbox/
+mv agents/researcher/inbox/.failed/1742860000000-a3f9c1d2e5b87041.msg agents/researcher/inbox/
 ```
 
 ## Consequences

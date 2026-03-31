@@ -226,16 +226,15 @@ $LOOM_HOME/
 
 ## Message format
 
-Messages are JSON files with `.msg` extension, named `{timestamp_ms}-{ulid}.msg`.
+Messages are JSON files with `.msg` extension, named `{timestamp_ms}-{id}.msg`.
 
 ```json
 {
   "v": 1,
-  "id": "a3f9c1d2e5b8...",
+  "id": "a3f9c1d2e5b87041",
   "from": "cli",
-  "ts": "2026-03-25T00:00:00.000Z",
-  "body": "hello world",
-  "metadata": {}
+  "ts": 1742860000000,
+  "body": "hello world"
 }
 ```
 

@@ -25,21 +25,31 @@ The implementation is split into two layers:
   the agent name prepended: `(agentName, filename, message)`. This is the multi-agent
   coordinator.
 
-Message processing uses a three-phase lifecycle to guarantee reliable delivery
-with idempotent restart recovery:
+**Current implementation:** Consumed files are moved directly from `inbox/`
+to `inbox/.processed/` via the `consume()` function. This is a two-phase model
+(pending → processed).
+
+### Target: three-phase message lifecycle
+
+> **Not yet implemented.** The following describes the target design for
+> reliable delivery with idempotent restart recovery. The current runtime
+> uses the simpler two-phase model above. See ADR-005 for the runner
+> architecture that will implement this.
+
+The target lifecycle adds an intermediate `.in-progress/` phase:
 
 ```
 inbox/
-  {ts}-{ulid}.msg           ← pending — not yet claimed
+  {ts}-{id}.msg             ← pending — not yet claimed
   .in-progress/
-    {ts}-{ulid}.msg         ← claimed — runner is processing this now
+    {ts}-{id}.msg           ← claimed — runner is processing this now
   .processed/
-    {ts}-{ulid}.msg         ← done — successfully processed
+    {ts}-{id}.msg           ← done — successfully processed
   .failed/
-    {ts}-{ulid}.msg         ← failed — exhausted all retries
-    {ts}-{ulid}.msg.error.json  ← companion error details
+    {ts}-{id}.msg           ← failed — exhausted all retries
+    {ts}-{id}.msg.error.json    ← companion error details
   .unreadable/
-    {ts}-{ulid}.msg         ← could not be parsed as valid JSON
+    {ts}-{id}.msg           ← could not be parsed as valid JSON
 ```
 
 ```
@@ -58,9 +68,9 @@ InboxRouter.add(agent)
   start watcher
 ```
 
-### Restart recovery
+### Restart recovery (target design)
 
-On startup, the runner checks `inbox/.in-progress/` for messages that were
+On startup, the runner will check `inbox/.in-progress/` for messages that were
 mid-processing when it last crashed:
 
 ```
@@ -70,9 +80,9 @@ for each file in inbox/.in-progress/:
   if not found → processing did not complete, move back to inbox/ for reprocessing
 ```
 
-This provides at-least-once delivery with no duplicate responses: if the outbox
-already contains the response, the runner skips reprocessing and just finishes
-the acknowledgment.
+This will provide at-least-once delivery with no duplicate responses: if the
+outbox already contains the response, the runner skips reprocessing and just
+finishes the acknowledgment.
 
 ## Rationale
 
