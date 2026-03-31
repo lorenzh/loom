@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentLogger } from "./logger";
@@ -25,16 +25,14 @@ test("log writes a valid NDJSON line", () => {
   logger.info("agent.started", { pid: 42 });
 
   const logsDir = join(agentDir, "logs");
-  const files = existsSync(logsDir)
-    ? require("node:fs").readdirSync(logsDir).filter((f: string) => f.endsWith(".ndjson"))
-    : [];
+  const files = readdirSync(logsDir).filter((f) => f.endsWith(".ndjson"));
   expect(files).toHaveLength(1);
 
-  const content = readFileSync(join(logsDir, files[0]), "utf8");
+  const content = readFileSync(join(logsDir, files[0] as string), "utf8");
   const lines = content.trim().split("\n");
   expect(lines).toHaveLength(1);
 
-  const entry = JSON.parse(lines[0]);
+  const entry = JSON.parse(lines[0] as string) as Record<string, unknown>;
   expect(entry.level).toBe("info");
   expect(entry.event).toBe("agent.started");
   expect(entry.pid).toBe(42);
@@ -46,7 +44,7 @@ test("log filename is based on the current date", () => {
   logger.warn("test.warn");
 
   const logsDir = join(agentDir, "logs");
-  const files = require("node:fs").readdirSync(logsDir);
+  const files = readdirSync(logsDir);
   expect(files[0]).toMatch(/^\d{4}-\d{2}-\d{2}\.ndjson$/);
 });
 
@@ -56,14 +54,17 @@ test("multiple log calls append to the same file", () => {
   logger.error("second.event", { reason: "crash" });
 
   const logsDir = join(agentDir, "logs");
-  const files = require("node:fs").readdirSync(logsDir);
-  const content = readFileSync(join(logsDir, files[0]), "utf8");
+  const files = readdirSync(logsDir);
+  const content = readFileSync(join(logsDir, files[0] as string), "utf8");
   const lines = content.trim().split("\n");
 
   expect(lines).toHaveLength(2);
-  expect(JSON.parse(lines[0]).event).toBe("first.event");
-  expect(JSON.parse(lines[1]).event).toBe("second.event");
-  expect(JSON.parse(lines[1]).reason).toBe("crash");
+
+  const first = JSON.parse(lines[0] as string) as Record<string, unknown>;
+  const second = JSON.parse(lines[1] as string) as Record<string, unknown>;
+  expect(first.event).toBe("first.event");
+  expect(second.event).toBe("second.event");
+  expect(second.reason).toBe("crash");
 });
 
 test("convenience methods set the correct level", () => {
@@ -74,14 +75,14 @@ test("convenience methods set the correct level", () => {
   logger.error("e");
 
   const logsDir = join(agentDir, "logs");
-  const files = require("node:fs").readdirSync(logsDir);
-  const lines = readFileSync(join(logsDir, files[0]), "utf8")
+  const files = readdirSync(logsDir);
+  const lines = readFileSync(join(logsDir, files[0] as string), "utf8")
     .trim()
     .split("\n")
-    .map((l: string) => JSON.parse(l));
+    .map((l) => JSON.parse(l) as Record<string, unknown>);
 
-  expect(lines[0].level).toBe("debug");
-  expect(lines[1].level).toBe("info");
-  expect(lines[2].level).toBe("warn");
-  expect(lines[3].level).toBe("error");
+  expect(lines[0]?.level).toBe("debug");
+  expect(lines[1]?.level).toBe("info");
+  expect(lines[2]?.level).toBe("warn");
+  expect(lines[3]?.level).toBe("error");
 });
