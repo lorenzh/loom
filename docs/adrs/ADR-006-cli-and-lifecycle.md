@@ -184,3 +184,11 @@ be a command, not a function call.
 - ADR-004: Supervisor and restart policy — lifecycle management
 - ADR-005: Runner architecture — what runs inside an agent process
 - loom.yml ADR (draft): Declarative weave configuration for `loom up`
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-31 | **Audited against codebase.** No design contradictions found. All commands are forward-looking design specifications. |

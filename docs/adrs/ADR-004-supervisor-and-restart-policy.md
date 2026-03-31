@@ -109,7 +109,9 @@ Defaults:
 
 After `maxRestarts` failures within a `resetWindowMs` (default 3600000ms = 1 hour),
 the agent is considered permanently failed and the supervisor stops restarting it.
-An operator must manually run `loom restart {name}` to resume.
+An operator can resume the agent by writing `status: pending` and sending SIGHUP
+to the supervisor, or by running `loom stop {name}` followed by
+`loom run --name {name} --detach`.
 
 ### Visibility
 
@@ -187,7 +189,7 @@ that hit `maxRestarts` in a previous supervisor session) get a fresh chance afte
 a system reboot or supervisor restart.
 
 The supervisor does not install itself as a system service. That is the operator's job.
-A systemd unit file template is provided in `docs/examples/loom-supervisor.service`.
+A systemd unit file template will be provided in `docs/examples/loom-supervisor.service`.
 
 ## Consequences
 
@@ -222,3 +224,12 @@ The supervisor could watch inboxes and dispatch messages to runners via stdin, r
 responses from stdout. Rejected because it makes the supervisor a critical path for
 all message processing and prevents runners from working standalone. Self-sufficient
 runners (ADR-005) are simpler and more resilient.
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-31 | **Removed `loom restart` command reference.** ADR-006 does not define a `loom restart` command. Replaced with the equivalent operator workflow: write `status: pending` + SIGHUP, or stop + re-run detached. |
+| 2026-03-31 | **Fixed systemd unit file reference.** Changed "is provided" to "will be provided" — the file does not exist yet. |
