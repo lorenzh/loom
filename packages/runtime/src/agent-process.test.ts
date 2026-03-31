@@ -29,6 +29,20 @@ test("dir returns the agent directory path", () => {
   expect(agent.dir).toBe(join(home, "alice"));
 });
 
+test("constructor creates inbox, outbox, memory, logs, crashes subdirectories", () => {
+  new AgentProcess(home, "alice");
+  for (const subdir of ["inbox", "outbox", "memory", "logs", "crashes"]) {
+    expect(existsSync(join(home, "alice", subdir))).toBe(true);
+  }
+});
+
+test("constructor is idempotent — calling twice does not error", () => {
+  expect(() => {
+    new AgentProcess(home, "alice");
+    new AgentProcess(home, "alice");
+  }).not.toThrow();
+});
+
 test("pid defaults to null", () => {
   const agent = new AgentProcess(home, "alice");
   expect(agent.pid).toBeNull();

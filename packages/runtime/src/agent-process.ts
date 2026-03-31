@@ -39,6 +39,9 @@ export class AgentProcess {
     this._name = name;
     this._agentDir = join(home, name);
     mkdirSync(this._agentDir, { recursive: true });
+    for (const subdir of ["inbox", "outbox", "memory", "logs", "crashes"]) {
+      mkdirSync(join(this._agentDir, subdir), { recursive: true });
+    }
   }
 
   get name(): string {
