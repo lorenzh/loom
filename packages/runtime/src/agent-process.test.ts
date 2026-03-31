@@ -122,6 +122,18 @@ test("entry returns full snapshot", () => {
   expect(entry.dir).toBe(join(home, "alice"));
 });
 
+test("status can be set to stopped", () => {
+  const agent = new AgentProcess(home, "alice");
+  agent.status = "stopped";
+  expect(agent.status).toBe("stopped");
+});
+
+test("status can be set to pending", () => {
+  const agent = new AgentProcess(home, "alice");
+  agent.status = "pending";
+  expect(agent.status).toBe("pending");
+});
+
 test("second AgentProcess for same name reads existing state", () => {
   const a1 = new AgentProcess(home, "alice");
   a1.status = "running";

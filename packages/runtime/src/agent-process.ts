@@ -12,7 +12,7 @@ function writeField(agentDir: string, field: string, value: string): void {
   writeFileSync(join(agentDir, field), `${value}\n`, "utf8");
 }
 
-export type AgentStatus = "running" | "idle" | "dead" | "error" | "restarting";
+export type AgentStatus = "pending" | "running" | "idle" | "dead" | "error" | "restarting" | "stopped";
 
 export interface AgentEntry {
   name: string;
