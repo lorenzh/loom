@@ -101,11 +101,25 @@ export async function quarantine(dir: string, filename: string): Promise<void> {
   await rename(join(dir, filename), join(unreadableDir, filename));
 }
 
-/** Read, parse, and move a message to .processed/, returning its parsed content. */
-export async function consume(dir: string, filename: string) {
+/** Move a message from inbox to .in-progress/ and return its parsed content. */
+export async function claim(dir: string, filename: string): Promise<Message> {
   const msg = await read(dir, filename);
+  const inProgressDir = join(dir, ".in-progress");
+  await mkdir(inProgressDir, { recursive: true });
+  await rename(join(dir, filename), join(inProgressDir, filename));
+  return msg;
+}
+
+/** Move a message from .in-progress/ to .processed/. */
+export async function acknowledge(dir: string, filename: string): Promise<void> {
   const processedDir = join(dir, ".processed");
   await mkdir(processedDir, { recursive: true });
-  await rename(join(dir, filename), join(processedDir, filename));
+  await rename(join(dir, ".in-progress", filename), join(processedDir, filename));
+}
+
+/** Read, parse, and move a message to .processed/, returning its parsed content. */
+export async function consume(dir: string, filename: string): Promise<Message> {
+  const msg = await claim(dir, filename);
+  await acknowledge(dir, filename);
   return msg;
 }

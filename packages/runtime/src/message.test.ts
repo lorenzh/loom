@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { consume, isMessage, list, quarantine, read, send } from "./message";
+import { acknowledge, claim, consume, isMessage, list, quarantine, read, send } from "./message";
 
 let root: string;
 const AGENT = "test-agent";
@@ -95,6 +95,48 @@ test("read throws on invalid message format", async () => {
   await Bun.file(join(inboxDir, "bad.msg")).write(JSON.stringify({ invalid: true }));
 
   expect(read(inboxDir, "bad.msg")).rejects.toThrow("Invalid message format");
+});
+
+// --- claim ---
+
+test("claim reads message and moves it to .in-progress", async () => {
+  const msg = await send(root, AGENT, "sender", "claim test");
+  const inboxDir = join(root, AGENT, "inbox");
+  const files = await list(inboxDir);
+  const filename = files[0] as string;
+
+  const result = await claim(inboxDir, filename);
+  expect(result).toEqual(msg);
+
+  // Original file should be gone from inbox
+  const remaining = await list(inboxDir);
+  expect(remaining).toEqual([]);
+
+  // Should exist in .in-progress
+  const inProgressFile = Bun.file(join(inboxDir, ".in-progress", filename));
+  expect(await inProgressFile.exists()).toBe(true);
+});
+
+// --- acknowledge ---
+
+test("acknowledge moves message from .in-progress to .processed", async () => {
+  await send(root, AGENT, "sender", "ack test");
+  const inboxDir = join(root, AGENT, "inbox");
+  const files = await list(inboxDir);
+  const filename = files[0] as string;
+
+  // First claim it
+  await claim(inboxDir, filename);
+
+  // Then acknowledge it
+  await acknowledge(inboxDir, filename);
+
+  // Should not exist in .in-progress
+  expect(await Bun.file(join(inboxDir, ".in-progress", filename)).exists()).toBe(false);
+
+  // Should exist in .processed
+  const processedFile = Bun.file(join(inboxDir, ".processed", filename));
+  expect(await processedFile.exists()).toBe(true);
 });
 
 // --- consume ---
