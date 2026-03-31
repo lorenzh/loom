@@ -32,14 +32,37 @@ The runner includes six built-in tools implemented as functions inside the
 runner process. They are always available to every agent. No subprocess is
 spawned — tool calls execute in-process for minimal latency.
 
-| Tool | Purpose | Key parameters |
-|------|---------|----------------|
-| **read** | Read file contents | `path`, `offset`, `limit` |
-| **write** | Create or overwrite a file | `path`, `content` |
-| **edit** | Replace a string in an existing file | `path`, `old_string`, `new_string` |
-| **glob** | Find files matching a pattern | `pattern`, `path` |
-| **grep** | Search file contents by regex | `pattern`, `path`, `glob` |
-| **bash** | Execute a shell command | `command`, `timeout` |
+| Tool | Purpose | Key parameters | Default |
+|------|---------|----------------|---------|
+| **read** | Read file contents | `path`, `offset`, `limit` | enabled |
+| **write** | Create or overwrite a file | `path`, `content` | enabled |
+| **edit** | Replace a string in an existing file | `path`, `old_string`, `new_string` | enabled |
+| **glob** | Find files matching a pattern | `pattern`, `path` | enabled |
+| **grep** | Search file contents by regex | `pattern`, `path`, `glob` | enabled |
+| **bash** | Execute a shell command | `command`, `timeout` | disabled |
+
+All built-in tools except bash are enabled by default. Any built-in tool can
+be disabled per-agent via configuration:
+
+```yaml
+# loom.yml
+agents:
+  researcher:
+    model: anthropic/claude-sonnet-4-20250514
+    tools:
+      bash: true          # opt-in
+      write: false        # opt-out
+      edit: false          # opt-out — read-only agent
+```
+
+```sh
+# CLI overrides
+loom run --name researcher --model anthropic/claude-sonnet-4-20250514 \
+  --enable-tool bash --disable-tool write --disable-tool edit
+```
+
+Disabled tools are excluded from the schema sent to the LLM — the model
+doesn't know they exist.
 
 Built-in tools use the same JSON Schema interface that plugins use (see
 ADR-005). The runner generates their tool definitions and merges them with any
@@ -315,10 +338,11 @@ take responsibility. Stronger sandboxing is an OS-level concern.
 entire directory tree. This is powerful and necessary, but the operator must
 understand the implications.
 
-**Built-in tools can't be removed.** All six tools (five if bash is disabled)
-are always present. An agent that should only call LLMs and send messages still
-sees read/write/edit/grep/glob in its tool list. This is minor — the LLM
-simply won't use tools that aren't relevant to its task.
+**Tool configuration is per-agent.** Operators can disable any built-in tool,
+which means different agents in the same weave may have different tool sets.
+This is intentional — a read-only research agent shouldn't have write/edit,
+while a coding agent needs everything. The runner resolves the tool list at
+startup and it's fixed for the agent's lifetime.
 
 **Plugin directory proliferation.** Each plugin gets its own directory under
 `plugins/`. Many plugins means many subdirectories, but they are contained
@@ -340,10 +364,10 @@ The runner could enforce network and filesystem restrictions on bash commands
 using OS primitives. Feasible but complex, platform-specific, and out of scope
 for v1. Deferred to a future ADR.
 
-**Capability-based tool permissions:**
-Each agent declares which tools it needs, and the runner only enables those.
-Adds configuration burden for marginal safety gain — the LLM simply ignores
-tools it doesn't need. Rejected for v1, may revisit for multi-tenant setups.
+**Capability-based tool permissions (mandatory declarations):**
+Each agent must explicitly declare which tools it needs. Rejected — too much
+friction for the common case. The opt-out model (everything on by default,
+disable what you don't want) is simpler and covers the same use cases.
 
 ## References
 
