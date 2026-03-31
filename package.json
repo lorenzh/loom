@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "build": "bun run --filter './packages/*' build",
-    "build:pkg": "bun tools/build-publish-package.ts packages/runtime && bun tools/build-publish-package.ts packages/runner",
+    "build:pkg": "bun tools/build-publish-package.ts packages/runtime && bun tools/build-publish-package.ts packages/runner && bun tools/build-publish-package.ts packages/supervisor && bun tools/build-publish-package.ts packages/cli",
     "prepare": "git config core.hooksPath .githooks",
     "check": "biome check .",
     "fix": "biome check --write .",
