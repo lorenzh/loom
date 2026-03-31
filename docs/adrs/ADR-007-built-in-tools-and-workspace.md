@@ -222,11 +222,48 @@ For example, a **memory** plugin:
 - The runner creates `$LOOM_HOME/agents/{name}/plugins/memory/` and passes it
   as `scope_dir` in the plugin's invocation JSON
 - The plugin reads/writes within its scoped directory
-- Built-in tools cannot see `plugins/`; the memory plugin cannot see `workspace/`
+- By default, the plugin cannot see `workspace/`
+
+#### Plugin workspace access
+
+Plugins can be configured to also receive access to the agent's workspace.
+This is opt-in per plugin — the operator grants it in the agent or weave
+configuration:
+
+```yaml
+# loom.yml
+agents:
+  researcher:
+    model: anthropic/claude-sonnet-4-20250514
+    plugins:
+      memory: {}                          # scoped dir only
+      code-review:
+        workspace_access: true            # gets both scoped dir + workspace
+```
+
+When `workspace_access` is enabled, the runner passes both paths in the
+plugin's invocation JSON:
+
+```json
+{
+  "scope_dir": "$LOOM_HOME/agents/researcher/plugins/code-review/",
+  "workspace_dir": "/path/to/project"
+}
+```
+
+The plugin decides how to use each. A code-review plugin might read project
+files from the workspace while storing its review state in its scoped
+directory. The separation still holds — the scoped directory is the plugin's
+private state, the workspace is shared read-write access to the project.
+
+Without `workspace_access`, the plugin only receives `scope_dir`. This is
+the safe default: most plugins (memory, caching, scheduling) don't need to
+see project files.
 
 This separation means:
 - **Workspace** = the agent's view of the outside world (project files, data)
-- **Plugin directories** = the agent's internal state (memory, caches, tool-specific storage)
+- **Plugin scoped directories** = the plugin's private internal state
+- **Workspace access** = opt-in grant for plugins that need to operate on project files
 
 ### Bash sandboxing
 
