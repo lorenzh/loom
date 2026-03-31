@@ -25,22 +25,64 @@ The implementation is split into two layers:
   the agent name prepended: `(agentName, filename, message)`. This is the multi-agent
   coordinator.
 
-Consumed files are moved to `inbox/.processed/` rather than deleted — they remain
-readable for debugging.
+**Current implementation:** Consumed files are moved directly from `inbox/`
+to `inbox/.processed/` via the `consume()` function. This is a two-phase model
+(pending → processed).
+
+### Target: three-phase message lifecycle
+
+> **Not yet implemented.** The following describes the target design for
+> reliable delivery with idempotent restart recovery. The current runtime
+> uses the simpler two-phase model above. See ADR-005 for the runner
+> architecture that will implement this.
+
+The target lifecycle adds an intermediate `.in-progress/` phase:
+
+```
+inbox/
+  {ts}-{id}.msg             ← pending — not yet claimed
+  .in-progress/
+    {ts}-{id}.msg           ← claimed — runner is processing this now
+  .processed/
+    {ts}-{id}.msg           ← done — successfully processed
+  .failed/
+    {ts}-{id}.msg           ← failed — exhausted all retries
+    {ts}-{id}.msg.error.json    ← companion error details
+  .unreadable/
+    {ts}-{id}.msg           ← could not be parsed as valid JSON
+```
 
 ```
 InboxWatcher.poll()
   list *.msg files in inbox/ (sorted by filename → oldest first)
   for each file:
     read + parse JSON
-    move to inbox/.processed/
+    move to inbox/.in-progress/         ← claim the message
     emit('message', filename, message)
+    (runner processes the message, writes response to outbox/)
+    move to inbox/.processed/           ← acknowledge completion
 
 InboxRouter.add(agent)
   create InboxWatcher.forAgent(home, agent)
   forward events with agent name prefix
   start watcher
 ```
+
+### Restart recovery (target design)
+
+On startup, the runner will check `inbox/.in-progress/` for messages that were
+mid-processing when it last crashed:
+
+```
+for each file in inbox/.in-progress/:
+  scan outbox/ for any message with in_reply_to == filename
+  if found → response already written, just move to .processed/
+  if not found → processing did not complete, move back to inbox/ for reprocessing
+```
+
+This will provide at-least-once delivery with no duplicate responses: if the
+outbox already contains the response, the runner skips reprocessing and just
+finishes the acknowledgment.
 
 ## Rationale
 

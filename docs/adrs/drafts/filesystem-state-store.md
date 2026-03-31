@@ -23,26 +23,38 @@ The choice of state store determines observability, portability, editability, an
 
 **All loom agent state lives in the filesystem as plain, human-readable files.**
 
-There is no database. There is no cloud backend. There is no opaque binary format. Every piece of agent state — running status, memory, conversation history, pending tasks, outputs — is a file in `~/.loom/agents/<pid>/`.
+There is no database. There is no cloud backend. There is no opaque binary format. Every piece of agent state — running status, memory, conversation history, pending tasks, outputs — is a file in `~/.loom/agents/<name>/`.
 
 ### Directory Layout
+
+Agent directories are keyed by **name**, not by PID or content hash (see ADR-002).
+Status is stored as **separate plain-text files**, not a single `meta.json` — each
+file can be read and written independently with standard Unix tools.
 
 ```
 ~/.loom/
 ├── config.json              # global configuration
 ├── plugins/                 # installed plugins (executables)
+├── supervisor.pid           # supervisor OS PID (if running)
+├── pipes/                   # pipe tracking logs (see pipe-engine ADR)
 └── agents/
-    └── <pid>/               # one directory per agent
-        ├── meta.json        # identity, status, heartbeat
+    └── <name>/              # one directory per agent
+        ├── pid              # plain text — current OS process ID, empty if not running
+        ├── status           # plain text — running | idle | stopped | dead | error | restarting
+        ├── model            # plain text — model identifier in use
+        ├── started_at       # plain text — ISO 8601 timestamp
+        ├── stopped_at       # plain text — ISO 8601 timestamp, empty if still running
         ├── env              # KEY=VALUE environment variables
         ├── cwd -> <path>    # symlink to working directory
         ├── prompt.md        # system prompt
-        ├── inbox/           # incoming messages/tasks
-        │   ├── 0001.json
-        │   └── 0002.json
-        ├── outbox/          # completed outputs
-        │   ├── 0001.json
-        │   └── final.json   # written on graceful exit
+        ├── inbox/           # incoming messages as .msg files
+        │   ├── {ts}-{ulid}.msg
+        │   ├── .in-progress/    # messages currently being processed
+        │   ├── .processed/      # successfully processed messages
+        │   ├── .failed/         # messages that failed after retries (+ .error.json)
+        │   └── .unreadable/     # messages that could not be parsed
+        ├── outbox/          # response messages as .msg files
+        │   └── {ts}-{ulid}.msg
         ├── memory/          # persistent memory files
         │   ├── MEMORY.md    # index (same format as Claude Code)
         │   └── *.md         # individual memory files
@@ -56,39 +68,44 @@ There is no database. There is no cloud backend. There is no opaque binary forma
 
 ### File Formats
 
-**meta.json** — agent identity and status:
+**Status files** — separate plain-text files (not a single JSON file):
+
+```sh
+$ cat agents/researcher/status
+running
+
+$ cat agents/researcher/model
+qwen3.5:9b
+
+$ cat agents/researcher/pid
+12345
+```
+
+This design lets operators check agent state with `cat` and update it with
+`echo running > status`. No JSON parsing required.
+
+**inbox/\*.msg** — incoming message (see ADR-002 for canonical format):
 ```json
 {
-  "pid": "7a2f",
-  "name": "researcher",
-  "model": "claude-sonnet-4-6",
-  "status": "running",
-  "created_at": "2026-03-26T05:00:00Z",
-  "heartbeat": "2026-03-26T05:04:32Z",
-  "parent": null,
-  "exit_code": null
+  "v": 1,
+  "id": "a3f9c1d2e5b8...",
+  "from": "cli",
+  "ts": "2026-03-26T05:01:00.000Z",
+  "body": "Research the history of Unix",
+  "metadata": {}
 }
 ```
 
-**inbox/\*.json** — incoming message:
+**outbox/\*.msg** — response message:
 ```json
 {
-  "id": "0001",
-  "type": "task",
-  "content": "Research the history of Unix",
-  "from": "user",
-  "received_at": "2026-03-26T05:01:00Z"
-}
-```
-
-**outbox/\*.json** — completed output:
-```json
-{
-  "id": "0001",
-  "status": "done",
-  "result": "Unix was created at Bell Labs in 1969...",
-  "elapsed_ms": 3241,
-  "completed_at": "2026-03-26T05:01:03Z"
+  "v": 1,
+  "id": "b7c4e1f2a9d3...",
+  "from": "researcher",
+  "ts": "2026-03-26T05:01:03.000Z",
+  "in_reply_to": "1742860000000-01JBXYZ9K2.msg",
+  "body": "Unix was created at Bell Labs in 1969...",
+  "metadata": {}
 }
 ```
 
@@ -117,17 +134,19 @@ File writes use an atomic rename pattern:
 
 This prevents corrupted reads during writes. No locking is required for writes.
 
-For inbox ordering, files are named with zero-padded monotonic counters (`0001.json`, `0002.json`). New messages use `max(existing) + 1`.
+For inbox ordering, files are named `{timestamp_ms}-{ulid}.msg`. ULIDs are
+lexicographically sortable and globally unique without coordination between
+agents (see ADR-002).
 
 ## Consequences
 
 ### Good
 
 **Everything is inspectable with standard tools.**
-- `cat ~/.loom/agents/7a2f/meta.json` — see agent status
-- `tail -f ~/.loom/agents/7a2f/stdout` — watch live output
-- `ls ~/.loom/agents/7a2f/inbox/` — see pending tasks
-- `wc -l ~/.loom/agents/7a2f/conversations/*.ndjson` — count messages
+- `cat ~/.loom/agents/researcher/status` — see agent status
+- `tail -f ~/.loom/agents/researcher/logs/2026-03-26.ndjson` — watch live activity
+- `ls ~/.loom/agents/researcher/inbox/` — see pending tasks
+- `wc -l ~/.loom/agents/researcher/conversations/*.ndjson` — count messages
 
 **Memory is directly editable.** Want to inject context into an agent? Write a file into its `memory/` directory. Want to correct a bad memory? Open it in vim. No API calls, no GUI required.
 
@@ -137,7 +156,7 @@ For inbox ordering, files are named with zero-padded monotonic counters (`0001.j
 
 **Debugging is structural.** When an agent behaves unexpectedly, the first step is `ls` and `cat`. The state is all there.
 
-**No running daemon required for inspection.** `loom ps` works even if nothing is running — it reads the `meta.json` files directly.
+**No running daemon required for inspection.** `loom ps` works even if nothing is running — it reads the status files directly.
 
 ### Tricky
 
@@ -148,7 +167,7 @@ For inbox ordering, files are named with zero-padded monotonic counters (`0001.j
 
 **No indexing.** Finding "all tasks where the result contained X" requires grepping thousands of files. This is acceptable for local-first scale (tens to hundreds of agents) but would not scale to thousands. For now, this is a feature (grep is universal), not a bug.
 
-**Race conditions on shared files.** Multiple processes writing to the same agent's inbox concurrently could corrupt counter-based filenames. We use a per-agent advisory lock file (`inbox/.lock`) taken during the name-assignment phase only. The write itself is atomic via rename.
+**Race conditions on shared files.** Multiple processes writing to the same agent's inbox concurrently could produce collisions. Mitigated by using `{timestamp_ms}-{ulid}.msg` filenames — ULIDs are globally unique without coordination, so no locking is needed for filename assignment. The write itself is atomic via rename.
 
 **Filesystem limits.** Deep nesting, long filenames, and inode limits are real on some systems. We keep all paths short and avoid deep nesting beyond what's shown in the layout.
 
