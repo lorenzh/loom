@@ -25,18 +25,10 @@ The implementation is split into two layers:
   the agent name prepended: `(agentName, filename, message)`. This is the multi-agent
   coordinator.
 
-**Current implementation:** Consumed files are moved directly from `inbox/`
-to `inbox/.processed/` via the `consume()` function. This is a two-phase model
-(pending → processed).
+### Three-phase message lifecycle
 
-### Target: three-phase message lifecycle
-
-> **Not yet implemented.** The following describes the target design for
-> reliable delivery with idempotent restart recovery. The current runtime
-> uses the simpler two-phase model above. See ADR-005 for the runner
-> architecture that will implement this.
-
-The target lifecycle adds an intermediate `.in-progress/` phase:
+The message lifecycle uses three filesystem phases for reliable delivery
+with idempotent restart recovery (see ADR-005):
 
 ```
 inbox/
@@ -57,10 +49,7 @@ InboxWatcher.poll()
   list *.msg files in inbox/ (sorted by filename → oldest first)
   for each file:
     read + parse JSON
-    move to inbox/.in-progress/         ← claim the message
     emit('message', filename, message)
-    (runner processes the message, writes response to outbox/)
-    move to inbox/.processed/           ← acknowledge completion
 
 InboxRouter.add(agent)
   create InboxWatcher.forAgent(home, agent)
@@ -68,9 +57,19 @@ InboxRouter.add(agent)
   start watcher
 ```
 
-### Restart recovery (target design)
+The watcher emits events; the **runner** (ADR-005) owns the three-phase
+transitions. When the runner receives a message event, it:
 
-On startup, the runner will check `inbox/.in-progress/` for messages that were
+1. Calls `claim()` — moves the file to `inbox/.in-progress/`
+2. Processes the message (LLM call, tool execution, writes response to `outbox/`)
+3. Calls `acknowledge()` — moves the file to `inbox/.processed/`
+
+This separation keeps `InboxWatcher` simple (detection only) while giving the
+runner control over the claim-process-acknowledge lifecycle.
+
+### Restart recovery
+
+On startup, the runner checks `inbox/.in-progress/` for messages that were
 mid-processing when it last crashed:
 
 ```
@@ -80,7 +79,7 @@ for each file in inbox/.in-progress/:
   if not found → processing did not complete, move back to inbox/ for reprocessing
 ```
 
-This will provide at-least-once delivery with no duplicate responses: if the
+This provides at-least-once delivery with no duplicate responses: if the
 outbox already contains the response, the runner skips reprocessing and just
 finishes the acknowledgment.
 
@@ -119,3 +118,17 @@ so `ls inbox/` still gives a clean view of pending messages.
 - `InboxRouter` manages multiple `InboxWatcher` instances, emits
   `(agentName, filename, message)`. Multi-agent callers (e.g. supervisor) use it
   via `router.add(agent)` / `router.remove(agent)` / `router.stop()`.
+- **`home` parameter convention:** `InboxWatcher.forAgent(home, name)` and
+  `InboxRouter` expect `home` to be the agents root directory
+  (`$LOOM_HOME/agents`), not `$LOOM_HOME` itself. The watcher constructs the
+  inbox path as `{home}/{name}/inbox/`.
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-31 | **Removed "not yet implemented" note.** The three-phase lifecycle (claim → process → acknowledge) is the decided design, not a future target. |
+| 2026-03-31 | **Clarified watcher vs runner responsibility.** `InboxWatcher` detects and emits; the runner owns the claim/process/acknowledge transitions. Updated pseudocode to reflect this separation. |
+| 2026-03-31 | **Documented `home` parameter convention.** `home` is `$LOOM_HOME/agents`, not `$LOOM_HOME`. |

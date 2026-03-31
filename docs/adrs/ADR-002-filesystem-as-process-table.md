@@ -16,7 +16,7 @@ The loom process table is a directory. Each agent has a subdirectory under `$LOO
 ```
 $LOOM_HOME/agents/{name}/
   pid           plain text — current OS process ID, empty if not running
-  status        plain text — one of: running | idle | stopped | dead | error | restarting
+  status        plain text — one of: running | idle | stopped | pending | dead | error | restarting
   model         plain text — model identifier in use
   started_at    plain text — ISO 8601 timestamp
   stopped_at    plain text — ISO 8601 timestamp, empty if still running
@@ -84,7 +84,7 @@ It is used for idempotent restart recovery: when a runner restarts, it checks
 determine if reprocessing is needed (see ADR-005).
 
 The `v` field is the schema version. It allows safe migration when the message format changes:
-- Missing `v` → treated as `v: 1` (backwards compat for files written before versioning was added)
+- Missing `v` → fails validation (`isMessage()` requires `v` to be present and numeric). The message is quarantined as unreadable.
 - `v` newer than the runtime's `MESSAGE_VERSION` → runtime throws with a clear error message asking the operator to upgrade loom
 - `v` equal or older → parsed normally
 
@@ -140,3 +140,12 @@ mv agents/researcher/inbox/.failed/1742860000000-a3f9c1d2e5b87041.msg agents/res
 **Redis/TCP pub-sub:** Fast, flexible. But requires a running server, network connectivity, and is invisible to standard Unix tools. Ruled out for core; may be added as optional remote transport later.
 
 **In-memory EventEmitter:** Simple, zero latency. But state is lost on crash and invisible to operators. Ruled out.
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-31 | **Added `pending` to status values.** ADR-004 and ADR-006 require writing `status: pending` for newly created detached agents. Added to the canonical set. |
+| 2026-03-31 | **Fixed `v` field backwards-compat rule.** Changed "missing `v` → treated as `v: 1`" to "missing `v` → fails validation, message is quarantined." The `v` field is required for all messages. |

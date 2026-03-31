@@ -1,8 +1,6 @@
 # loom
 
-> Weave agents into systems. A local-first runtime where agents are processes, state is files, and everything is observable.
-
-A local-first agent runtime. Agents are processes. All state lives in the filesystem. Nothing is hidden.
+> A local-first agent runtime where agents are Unix processes, all state lives in the filesystem, and everything is observable with standard Unix tools.
 
 ---
 
@@ -14,33 +12,38 @@ loom does the opposite.
 
 ## Core idea
 
-An agent is a long-running process. It has an identity, a working directory, an inbox, and an outbox. Agents communicate by writing files. The supervisor watches them and restarts on crash. You can observe everything with standard Unix tools.
+An agent is a Unix process. It has an identity, a status, an inbox, and an outbox. Agents communicate by writing files. The supervisor watches them and restarts on crash. You can observe everything with `cat`, `tail`, `grep`, and `ls`.
 
 ```
-$LOOM_HOME/
-  agents/
-    my-agent/
-      pid          # current process id
-      status       # running | idle | dead
-      model        # model in use
-      inbox/       # drop a .msg file here to send a message
-      outbox/      # agent writes responses here
-      memory/      # persistent key-value state
-      logs/        # append-only structured log, one file per day
-      crashes/     # crash records (if any)
-  supervisor.pid   # supervisor process id
-  pipes/           # active agent-to-agent wiring
+$LOOM_HOME/agents/{name}/
+  pid            # OS process ID of the running runner
+  status         # running | idle | stopped | pending | dead | error | restarting
+  model          # model identifier in use
+  started_at     # ISO 8601 timestamp
+  stopped_at     # ISO 8601 timestamp (empty if still running)
+  inbox/         # incoming messages as .msg files
+    .in-progress/  # messages currently being processed (claimed)
+    .processed/    # successfully processed messages
+    .failed/       # messages that failed after all retries
+    .unreadable/   # messages that could not be parsed
+  outbox/        # outgoing messages as .msg files
+  memory/        # persistent key-value state as .json files
+  logs/          # append-only NDJSON log files, one per day
+  crashes/       # crash records (if any)
+$LOOM_HOME/supervisor.pid   # supervisor process ID
 ```
+
+Messages are JSON files named `{timestamp_ms}-{id}.msg`. The timestamp prefix gives human-readable ordering in directory listings.
 
 ---
 
 ## Platform support
 
-loom relies on Unix process semantics (POSIX signals, pid-based supervision, file descriptor inheritance). It runs on:
+loom relies on Unix process semantics (POSIX signals, PID-based supervision, file descriptor inheritance). It runs on:
 
-- **Linux** — x64, arm64
-- **macOS** — x64, arm64
-- **Windows** — via [WSL](https://learn.microsoft.com/en-us/windows/wsl/) (use the Linux binary inside WSL)
+- **Linux** -- x64, arm64
+- **macOS** -- x64, arm64
+- **Windows** -- via [WSL](https://learn.microsoft.com/en-us/windows/wsl/) (use the Linux binary inside WSL)
 
 Native Windows is not supported.
 
@@ -51,7 +54,6 @@ Native Windows is not supported.
 ### Prerequisites
 
 - [Bun](https://bun.sh) 1.3+
-- [Ollama](https://ollama.com) running locally (or any OpenAI-compatible endpoint)
 
 ### Build from source
 
@@ -62,70 +64,38 @@ bun install
 bun run build
 ```
 
-### Start a single agent
-
-```sh
-# Pull a model (if using Ollama)
-ollama pull qwen2.5:3b
-
-# Scaffold a starter loom.yml
-loom init
-
-# Edit loom.yml — set the model and system prompt:
-# version: 1
-# agents:
-#   - name: my-agent
-#     model: qwen2.5:3b
-#     system: "You are a helpful assistant."
-
-# Start the agent
-loom spawn my-agent
-
-# Send it a message
-loom send my-agent "What is the capital of France?"
-
-# Read the response
-loom read my-agent
-```
-
-### Validate a config
-
-```sh
-# Check your loom.yml is valid before using it
-loom validate
-
-# Point at a specific file
-loom validate --file ./config/agents.yml
-
-# Machine-readable output
-loom validate --json
-```
-
 ---
 
 ## CLI
 
+Two primary commands cover the full lifecycle:
+
 ```sh
-# Weave
-loom up [--follow, -f]                            # start supervisor and all agents from loom.yml
-loom down                                         # stop supervisor and all agents
-loom ps                                           # list agents and their status
+# Single agent -- foreground (interactive, streams to terminal)
+loom run --name my-agent --model qwen3.5:9b
 
-# Agents
-loom spawn <name>                                 # start an agent from loom.yml
-loom kill <name>                                  # kill an agent process
-loom log <name> [--follow, -f]                    # stream agent logs
+# Single agent -- background (supervised, restarts on crash)
+loom run --name my-agent --model qwen3.5:9b --detach
 
-# Messaging
-loom send <name> "<message>"                      # send a message to an agent's inbox
-loom read <name>                                  # read latest outbox message(s)
-loom inbox <name> [--follow, -f]                  # show pending inbox messages
-loom outbox <name> [--follow, -f]                 # show outbox messages
-
-# Config
-loom validate [--file <path>]                     # validate loom.yml against schema and pipe rules
-loom init                                         # scaffold a starter loom.yml
+# Multi-agent weave from loom.yml
+loom up
 ```
+
+Supporting commands:
+
+```sh
+loom ps                    # list agents and their status
+loom stop <name>           # stop a specific agent
+loom logs <name>           # view agent logs
+loom send <name> <msg>     # send a message to an agent's inbox
+loom down                  # stop all agents started by loom up
+```
+
+| Mode | Supervisor | Restart on crash | Pipe engine |
+|------|-----------|-----------------|-------------|
+| `loom run` (foreground) | No | No | No |
+| `loom run --detach` | Yes | Yes | Yes |
+| `loom up` | Yes | Yes | Yes |
 
 ---
 
@@ -134,88 +104,46 @@ loom init                                         # scaffold a starter loom.yml
 - Any language can read a file. No SDK required to observe an agent.
 - `tail -f logs/my-agent` works. `ls inbox/` works. `cat status` works.
 - State survives process crashes. Inbox messages are not lost.
-- Works offline. No cloud dependency. No API key required to run.
+- Works offline. No cloud dependency. No API key required to run locally.
 - Composable with Unix tools: `watch`, `grep`, `jq`, `cron`.
-
----
-
-## Pluggable models
-
-loom routes models by prefix — Ollama (default), Anthropic, OpenAI, and OpenRouter are all supported. Any OpenAI-compatible endpoint also works:
-
-```sh
-# Local via Ollama (default — no prefix needed)
-loom spawn my-agent --model qwen2.5:3b
-
-# Explicit Ollama prefix
-loom spawn my-agent --model ollama/qwen3.5:9b
-
-# Anthropic (set ANTHROPIC_API_KEY)
-ANTHROPIC_API_KEY=sk-ant-... \
-loom spawn my-agent --model anthropic/claude-sonnet-4-6
-
-# OpenAI (set OPENAI_API_KEY)
-OPENAI_API_KEY=sk-... \
-loom spawn my-agent --model openai/gpt-4o
-
-# OpenRouter (set OPENROUTER_API_KEY)
-OPENROUTER_API_KEY=sk-or-... \
-loom spawn my-agent --model openrouter/anthropic/claude-3.5-sonnet
-```
-
-| Prefix | Provider | Env vars |
-|--------|----------|----------|
-| _(none)_ | Ollama | `OLLAMA_BASE_URL` (default: `http://localhost:11434/v1`) |
-| `ollama/` | Ollama | `OLLAMA_BASE_URL` |
-| `anthropic/` | Anthropic | `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` |
-| `openai/` | OpenAI | `OPENAI_API_KEY`, `OPENAI_BASE_URL` |
-| `openrouter/` | OpenRouter | `OPENROUTER_API_KEY` |
-
-See [`docs/adrs/drafts/model-routing.md`](docs/adrs/drafts/model-routing.md) for the full model routing spec.
 
 ---
 
 ## Architecture
 
+The system has three main components:
+
+**Runner** -- one per agent. A self-sufficient OS process that polls its inbox, calls the LLM, executes tools, writes responses to the outbox, and maintains its own state files. Runners work standalone without a supervisor.
+
+**Supervisor** -- a process manager. Spawns runners, detects crashes via child process exit events, restarts with exponential backoff, and runs the pipe engine for inter-agent communication. If the supervisor dies, runners keep running -- they just lose restart protection.
+
+**Filesystem** -- the source of truth. All state is plain files. The CLI writes to the filesystem; the supervisor reads it. A SIGHUP signal nudges the supervisor to re-scan immediately.
+
 ```
-┌──────────────────────────────────────────────────────┐
-│  loom supervisor (single long-running process)      │
-│                                                      │
-│  ┌────────────┐   ┌────────────┐   ┌─────────────┐  │
-│  │ inbox      │   │ agent A    │   │ pipe engine │  │
-│  │ watcher    │──▶│ (spawned)  │──▶│ (outbox →   │  │
-│  │ (polling)  │   │            │   │  inbox)     │  │
-│  └────────────┘   └────────────┘   └─────────────┘  │
-│                                                      │
-│  ┌────────────────────────────────────────────────┐  │
-│  │ health monitor (heartbeat every 5s)            │  │
-│  │  → detects dead agents                         │  │
-│  │  → applies restart policy with backoff         │  │
-│  └────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────┘
-                        │
-                        │ reads/writes
-                        ▼
-┌──────────────────────────────────────────────────────┐
-│  $LOOM_HOME/agents/{name}/                          │
-│    pid  status  inbox/  outbox/  memory/  logs/      │
-└──────────────────────────────────────────────────────┘
-                        │
-                        │ any process can read/write
-                        ▼
-              standard Unix tools
-              cat, tail, grep, jq, watch
+Runner (one per agent)              Supervisor (process manager)
+  ├── polls inbox/ (200ms)            ├── spawns runners
+  ├── claims message → .in-progress/  ├── detects crashes (child exit)
+  ├── calls LLM via provider          ├── restarts with backoff
+  ├── writes response to outbox/      ├── runs pipe engine
+  ├── acknowledges → .processed/      └── writes crash records
+  └── updates status (running/idle)
 ```
 
-Each agent is a spawned child process. The supervisor watches for crashes and
-restarts with exponential backoff. If the supervisor dies, agents keep running —
-they just won't be restarted until the supervisor comes back.
+### Restart policy
+
+Each agent has a restart policy: `always` (default), `on-failure`, or `never`. Exponential backoff with jitter prevents runaway restart loops:
+
+```
+delay = min(1s * 2^restartCount, 5m) + jitter(0..500ms)
+```
+
+After 10 failures within one hour, the agent is marked `dead` and the supervisor stops restarting it.
 
 ---
 
 ## Design decisions
 
-Architecture decision records live in [`docs/adrs/`](docs/adrs/). Accepted ADRs are numbered; drafts live in [`docs/adrs/drafts/`](docs/adrs/drafts/) and receive a number once approved.
+Architecture decision records live in [`docs/adrs/`](docs/adrs/).
 
 ### Accepted
 
@@ -225,6 +153,8 @@ Architecture decision records live in [`docs/adrs/`](docs/adrs/). Accepted ADRs 
 | [ADR-002](docs/adrs/ADR-002-filesystem-as-process-table.md) | Filesystem as process table |
 | [ADR-003](docs/adrs/ADR-003-inbox-watcher-polling.md) | Inbox watcher via polling |
 | [ADR-004](docs/adrs/ADR-004-supervisor-and-restart-policy.md) | Supervisor and restart policy |
+| [ADR-005](docs/adrs/ADR-005-runner-architecture.md) | Runner architecture |
+| [ADR-006](docs/adrs/ADR-006-cli-and-lifecycle.md) | CLI and agent lifecycle |
 
 ### Drafts
 
@@ -234,8 +164,8 @@ Architecture decision records live in [`docs/adrs/`](docs/adrs/). Accepted ADRs 
 | [plugin-model](docs/adrs/drafts/plugin-model.md) | Plugin and extension model |
 | [model-routing](docs/adrs/drafts/model-routing.md) | Model routing and provider abstraction |
 | [filesystem-state-store](docs/adrs/drafts/filesystem-state-store.md) | Filesystem as state store |
-| [plugin-protocol](docs/adrs/drafts/plugin-protocol.md) | Plugin protocol — tools as executables |
-| [pipe-engine](docs/adrs/drafts/pipe-engine.md) | Pipe engine — outbox-to-inbox forwarding |
+| [plugin-protocol](docs/adrs/drafts/plugin-protocol.md) | Plugin protocol -- tools as executables |
+| [pipe-engine](docs/adrs/drafts/pipe-engine.md) | Pipe engine -- outbox-to-inbox forwarding |
 
 ---
 

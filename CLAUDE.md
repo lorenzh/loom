@@ -21,24 +21,28 @@ bun run format           # format only
 
 Default to using Bun instead of Node.js for all commands.
 
+A pre-commit hook runs `biome check --staged`, `bun run build`, and `bun test` on every commit. It is activated automatically by `bun install` (via the `prepare` script).
+
 ## Monorepo structure
 
-- **`packages/runtime`** (`@losoft/loom-runtime`) — Zero-dependency core primitives: `AgentProcess` (filesystem-backed agent state), `ProcessTable`, `InboxWatcher` (polling-based), `InboxRouter`, and message utilities (`send`, `read`, `consume`, `list`, `quarantine`). No external runtime dependencies allowed.
-- **`packages/runner`** (`@losoft/loom-runner`) — Connects an agent's inbox to an LLM via the provider abstraction. Depends on `@losoft/loom-runtime`. Contains `AgentRunner` and the `Provider`/`ProviderRegistry` interfaces with `resolveProvider()` for model routing by prefix (ollama, anthropic, openai, openrouter).
+- **`packages/runtime`** (`@losoft/loom-runtime`) — Zero-dependency core primitives: `AgentProcess` (filesystem-backed agent state), `ProcessTable`, `InboxWatcher` (polling-based), `InboxRouter`, and message utilities (`send`, `read`, `claim`, `acknowledge`, `consume`, `list`, `quarantine`). No external runtime dependencies allowed.
+- **`packages/runner`** (`@losoft/loom-runner`) — Will connect an agent's inbox to an LLM via the provider abstraction. Depends on `@losoft/loom-runtime`. See ADR-005 for the architecture. Currently scaffolded only.
+- **`packages/supervisor`** (`@losoft/loom-supervisor`) — Process manager: spawns runners, detects crashes, restarts with backoff. Contains `Supervisor` class and restart policy logic (`RestartPolicy`, `CrashRecord`, `computeBackoff`). See ADR-004.
+- **`packages/cli`** (`@losoft/loom-cli`) — CLI entry point (`loom run`, `loom up`, `loom ps`, etc). Depends on all other packages. See ADR-006. Commands are currently stubs.
 - **`tools/`** — Build scripts (e.g. `build-publish-package.ts`).
 
 Each package builds for both Bun and Node.js targets (`dist/bun/` and `dist/node/`).
 
 ## Key architecture concepts
 
-- **Agents are processes** — each agent has a directory under `$LOOM_HOME/agents/{name}/` with plain-text files for `pid`, `status`, `model`, and subdirectories for `inbox/`, `outbox/`, `memory/`, `logs/`, `crashes/`.
-- **Messages are files** — `.msg` JSON files named `{timestamp}-{id}.msg`. Consumed messages move to `.processed/`; unreadable ones go to `.unreadable/`.
-- **Model routing** — model strings use prefix-based routing: no prefix = Ollama (default), `ollama/`, `anthropic/`, `openai/`, `openrouter/`. See `resolveProvider()` in `packages/runner/src/provider.ts`.
+- **Agents are processes** — each agent has a directory under `$LOOM_HOME/agents/{name}/` with plain-text files for `pid`, `status`, `model`, and subdirectories for `inbox/`, `outbox/`, `memory/`, `logs/`, `crashes/`. `$LOOM_HOME` defaults to `~/.loom` (see `loomHome()` in `packages/runtime/src/env.ts`). **Gotcha:** APIs like `AgentProcess`, `ProcessTable`, `InboxWatcher.forAgent()`, and `InboxRouter` take a `home` parameter that must be the agents root (`$LOOM_HOME/agents`), not `$LOOM_HOME` itself.
+- **Messages are files** — `.msg` JSON files named `{timestamp_ms}-{id}.msg`. Three-phase lifecycle: pending (`inbox/`) → claimed (`inbox/.in-progress/`) → processed (`inbox/.processed/`). Unreadable messages go to `inbox/.unreadable/`.
+- **Runners are self-sufficient** — each runner is an OS process that owns its agent's full lifecycle (inbox polling, LLM calls, tool execution, outbox writes, status updates). The supervisor is a process manager only — it spawns runners and handles restarts but does not mediate messages.
 - **ADRs** — Architecture decision records live in `docs/adrs/`. New design decisions require an ADR.
 
 ## Code conventions
 
-- TypeScript strict mode. Biome for linting/formatting (spaces, double quotes, semicolons, trailing commas).
+- TypeScript strict mode. Biome for linting/formatting (spaces, double quotes, semicolons, trailing commas, 100-char line width).
 - Tests live alongside source as `*.test.ts` files. Tests should verify filesystem state, not just return values.
 - Commits use Conventional Commits with gitmoji (e.g. `✨ feat:`, `🐛 fix:`, `📝 docs:`, `♻️ refactor:`, `🧪 test:`).
 - Every public function needs a one-line JSDoc comment.

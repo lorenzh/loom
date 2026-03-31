@@ -89,8 +89,8 @@ This provides at-least-once delivery with no duplicate responses.
 
 ### Tool execution
 
-The runner executes tools directly by spawning plugin executables (see plugin
-protocol ADR). When the LLM requests a tool call:
+The runner executes tools directly by spawning plugin executables.
+When the LLM requests a tool call:
 
 1. Runner looks up the tool's executable path (provided at init time)
 2. Spawns the plugin: `echo '<input_json>' | <plugin_path> invoke`
@@ -185,3 +185,11 @@ and tight coupling to the supervisor. Rejected.
 - ADR-002: Filesystem as process table — directory layout and message format
 - ADR-003: Inbox watcher polling — three-phase processing lifecycle
 - ADR-004: Supervisor and restart policy — process management and crash recovery
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-31 | **Removed dangling "plugin protocol ADR" reference.** The tool execution protocol is described inline in this ADR. A separate plugin protocol ADR may be added in the future if the protocol warrants its own decision record. |
