@@ -12,6 +12,17 @@
         "typescript": "^5",
       },
     },
+    "packages/cli": {
+      "name": "@losoft/loom-cli",
+      "dependencies": {
+        "@losoft/loom-runner": "workspace:*",
+        "@losoft/loom-runtime": "workspace:*",
+        "@losoft/loom-supervisor": "workspace:*",
+      },
+      "peerDependencies": {
+        "typescript": "^5",
+      },
+    },
     "packages/runner": {
       "name": "@losoft/loom-runner",
       "dependencies": {
@@ -23,6 +34,16 @@
     },
     "packages/runtime": {
       "name": "@losoft/loom-runtime",
+      "peerDependencies": {
+        "typescript": "^5",
+      },
+    },
+    "packages/supervisor": {
+      "name": "@losoft/loom-supervisor",
+      "dependencies": {
+        "@losoft/loom-runner": "workspace:*",
+        "@losoft/loom-runtime": "workspace:*",
+      },
       "peerDependencies": {
         "typescript": "^5",
       },
@@ -47,9 +68,13 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.9", "", { "os": "win32", "cpu": "x64" }, "sha512-NS4g/2G9SoQ4ktKtz31pvyc/rmgzlcIDCGU/zWbmHJAqx6gcRj2gj5Q/guXhoWTzCUaQZDIqiCQXHS7BcGYc0w=="],
 
+    "@losoft/loom-cli": ["@losoft/loom-cli@workspace:packages/cli"],
+
     "@losoft/loom-runner": ["@losoft/loom-runner@workspace:packages/runner"],
 
     "@losoft/loom-runtime": ["@losoft/loom-runtime@workspace:packages/runtime"],
+
+    "@losoft/loom-supervisor": ["@losoft/loom-supervisor@workspace:packages/supervisor"],
 
     "@types/bun": ["@types/bun@1.3.11", "", { "dependencies": { "bun-types": "1.3.11" } }, "sha512-5vPne5QvtpjGpsGYXiFyycfpDF2ECyPcTSsFBMa0fraoxiQyMJ3SmuQIGhzPg2WJuWxVBoxWJ2kClYTcw/4fAg=="],
 

@@ -1,0 +1,13 @@
+{
+  "bin": {
+    "loom": "./bun/index.js"
+  },
+  "exports": {
+    ".": {
+      "bun": "./bun/index.js",
+      "node": "./node/index.js",
+      "import": "./node/index.js",
+      "types": "./index.d.ts"
+    }
+  }
+}
