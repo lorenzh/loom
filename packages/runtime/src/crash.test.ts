@@ -49,8 +49,8 @@ test("listCrashRecords returns records sorted chronologically", async () => {
 
   const records = listCrashRecords(agentDir);
   expect(records).toHaveLength(2);
-  expect(records[0]!.restartCount).toBe(1);
-  expect(records[1]!.restartCount).toBe(2);
+  expect(records[0]?.restartCount).toBe(1);
+  expect(records[1]?.restartCount).toBe(2);
 });
 
 test("writeCrashRecord handles signal crashes", () => {

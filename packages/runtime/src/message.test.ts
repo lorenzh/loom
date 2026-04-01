@@ -170,7 +170,6 @@ test("consume reads and moves message to .processed", async () => {
   expect(await processedFile.exists()).toBe(true);
 });
 
-<<<<<<< HEAD
 // --- sendReply ---
 
 test("sendReply writes outbox message with in_reply_to", async () => {
@@ -201,7 +200,8 @@ test("isMessage rejects message with non-string in_reply_to", () => {
   expect(
     isMessage({ v: 1, id: "abc", from: "sender", ts: 123, body: "hello", in_reply_to: 42 }),
   ).toBe(false);
-=======
+});
+
 // --- fail ---
 
 test("fail moves message from .in-progress to .failed", async () => {
@@ -244,7 +244,6 @@ test("fail writes companion .error.json", async () => {
   expect(await errorFile.exists()).toBe(true);
   const parsed = await errorFile.json();
   expect(parsed).toEqual(errorInfo);
->>>>>>> 6b6a4f9 (✨ feat: add fail() to move messages to .failed/ with error companion)
 });
 
 // --- quarantine ---

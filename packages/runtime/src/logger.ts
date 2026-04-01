@@ -39,7 +39,7 @@ export class AgentLogger {
 
     const date = entry.ts.slice(0, 10);
     const filename = join(this._logsDir, `${date}.ndjson`);
-    appendFileSync(filename, JSON.stringify(entry) + "\n", "utf8");
+    appendFileSync(filename, `${JSON.stringify(entry)}\n`, "utf8");
   }
 
   /** Convenience method for debug-level entries. */
