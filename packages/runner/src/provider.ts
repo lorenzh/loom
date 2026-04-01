@@ -39,3 +39,42 @@ export class ProviderRegistry {
     return this.providers.get(name);
   }
 }
+
+const KNOWN_PREFIXES = ["ollama", "anthropic", "openai", "openrouter"] as const;
+
+/** Result of resolving a prefixed model string. */
+export interface ResolvedProvider {
+  provider: Provider;
+  modelName: string;
+}
+
+/**
+ * Resolve a (possibly prefixed) model string to a provider and bare model name.
+ * No prefix defaults to Ollama. Throws if the prefix is unknown or the provider is not registered.
+ */
+export function resolveProvider(model: string, registry: ProviderRegistry): ResolvedProvider {
+  const slashIdx = model.indexOf("/");
+  let providerName: string;
+  let modelName: string;
+
+  if (slashIdx === -1) {
+    providerName = "ollama";
+    modelName = model;
+  } else {
+    providerName = model.slice(0, slashIdx);
+    modelName = model.slice(slashIdx + 1);
+
+    if (!(KNOWN_PREFIXES as readonly string[]).includes(providerName)) {
+      throw new Error(
+        `Unknown provider prefix "${providerName}". Known prefixes: ${KNOWN_PREFIXES.join(", ")}`,
+      );
+    }
+  }
+
+  const provider = registry.get(providerName);
+  if (!provider) {
+    throw new Error(`Provider "${providerName}" is not registered`);
+  }
+
+  return { provider, modelName };
+}
