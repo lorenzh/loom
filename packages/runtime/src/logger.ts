@@ -31,10 +31,10 @@ export class AgentLogger {
     mkdirSync(this._logsDir, { recursive: true });
 
     const entry: LogEntry = {
+      ...fields,
       ts: new Date().toISOString(),
       level,
       event,
-      ...fields,
     };
 
     const date = entry.ts.slice(0, 10);
