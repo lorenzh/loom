@@ -59,6 +59,7 @@ export function sendReply(
     .then(() => message);
 }
 
+/** Returns true when `obj` conforms to the `Message` shape. */
 export function isMessage(obj: unknown): obj is Message {
   return (
     typeof obj === "object" &&
