@@ -13,6 +13,7 @@ export {
   type Message,
   quarantine,
   read,
+  recover,
   send,
   sendReply,
 } from "./message";

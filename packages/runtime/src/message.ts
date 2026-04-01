@@ -153,6 +153,35 @@ export async function consume(dir: string, filename: string): Promise<Message> {
   return msg;
 }
 
+/**
+ * Recover in-progress messages left by a previous crash.
+ *
+ * For each file in `inboxDir/.in-progress/`:
+ * - If `outboxDir` has a reply with matching `in_reply_to` → acknowledge (move to `.processed/`).
+ * - Otherwise → move back to `inboxDir` for reprocessing.
+ */
+export async function recover(inboxDir: string, outboxDir: string): Promise<void> {
+  const inProgressDir = join(inboxDir, ".in-progress");
+
+  const inProgressFiles = await list(inProgressDir);
+  if (inProgressFiles.length === 0) return;
+
+  const outboxFiles = await list(outboxDir);
+  const repliedTo = new Set<string>();
+  for (const f of outboxFiles) {
+    const msg = await read(outboxDir, f);
+    if (msg.in_reply_to) repliedTo.add(msg.in_reply_to);
+  }
+
+  for (const filename of inProgressFiles) {
+    if (repliedTo.has(filename)) {
+      await acknowledge(inboxDir, filename);
+    } else {
+      await rename(join(inProgressDir, filename), join(inboxDir, filename));
+    }
+  }
+}
+
 export interface FailError {
   ts: string;
   attempts: number;

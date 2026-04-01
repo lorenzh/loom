@@ -11,6 +11,7 @@ import {
   list,
   quarantine,
   read,
+  recover,
   send,
   sendReply,
 } from "./message";
@@ -244,6 +245,52 @@ test("fail writes companion .error.json", async () => {
   expect(await errorFile.exists()).toBe(true);
   const parsed = await errorFile.json();
   expect(parsed).toEqual(errorInfo);
+});
+
+// --- recover ---
+
+test("recover is a no-op when .in-progress is empty", async () => {
+  const inboxDir = join(root, AGENT, "inbox");
+  const outboxDir = join(root, AGENT, "outbox");
+  mkdirSync(outboxDir, { recursive: true });
+
+  await recover(inboxDir, outboxDir); // should not throw
+});
+
+test("recover acknowledges an in-progress message whose reply is already in outbox", async () => {
+  const inboxDir = join(root, AGENT, "inbox");
+  const outboxDir = join(root, AGENT, "outbox");
+  mkdirSync(outboxDir, { recursive: true });
+
+  await send(root, AGENT, "user", "hello");
+  const files = await list(inboxDir);
+  const filename = files[0]!;
+
+  await claim(inboxDir, filename);
+  await sendReply(root, AGENT, "reply", filename);
+
+  await recover(inboxDir, outboxDir);
+
+  expect(await Bun.file(join(inboxDir, ".in-progress", filename)).exists()).toBe(false);
+  expect(await Bun.file(join(inboxDir, ".processed", filename)).exists()).toBe(true);
+  expect(await list(inboxDir)).toHaveLength(0);
+});
+
+test("recover moves an in-progress message back to inbox when no reply exists", async () => {
+  const inboxDir = join(root, AGENT, "inbox");
+  const outboxDir = join(root, AGENT, "outbox");
+  mkdirSync(outboxDir, { recursive: true });
+
+  await send(root, AGENT, "user", "hello");
+  const files = await list(inboxDir);
+  const filename = files[0]!;
+
+  await claim(inboxDir, filename);
+
+  await recover(inboxDir, outboxDir);
+
+  expect(await Bun.file(join(inboxDir, ".in-progress", filename)).exists()).toBe(false);
+  expect(await list(inboxDir)).toEqual([filename]);
 });
 
 // --- quarantine ---
