@@ -68,6 +68,8 @@ bun run build
 
 ## CLI
 
+> **Local development:** use `bun run loom <command>` instead of `loom <command>` when running from the source repo. The `loom` binary is only available after installing the published npm package.
+
 Two primary commands cover the full lifecycle:
 
 ```sh
