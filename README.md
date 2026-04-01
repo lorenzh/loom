@@ -2,7 +2,8 @@
 
 > A local-first agent runtime where agents are Unix processes, all state lives in the filesystem, and everything is observable with standard Unix tools.
 
-> **Status: early development.** Most features described here are not yet implemented. Expect frequent breaking changes.
+> [!WARNING]
+> **Early development.** Most features described here are not yet implemented. Expect frequent breaking changes.
 
 ---
 
