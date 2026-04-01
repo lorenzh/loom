@@ -20,6 +20,8 @@ export interface Message {
   from: string;
   ts: number;
   body: string;
+  /** Inbox filename that triggered this reply — used for idempotent restart recovery. */
+  in_reply_to?: string;
 }
 
 function generateId(): string {
@@ -38,6 +40,26 @@ export function send(root: string, agent: string, from: string, body: string): P
     .then(() => message);
 }
 
+/** Write an outbox message referencing the inbox filename that triggered it. */
+export function sendReply(
+  root: string,
+  agent: string,
+  from: string,
+  body: string,
+  inReplyTo: string,
+): Promise<Message> {
+  const id = generateId();
+  const ts = Date.now();
+
+  const message: Message = { v: MESSAGE_VERSION, id, from, ts, body, in_reply_to: inReplyTo };
+
+  const path = join(root, agent, "outbox", `${ts}-${id}.msg`);
+  return Bun.file(path)
+    .write(JSON.stringify(message, null, 2))
+    .then(() => message);
+}
+
+/** Returns true when `obj` conforms to the `Message` shape. */
 export function isMessage(obj: unknown): obj is Message {
   return (
     typeof obj === "object" &&
@@ -51,7 +73,8 @@ export function isMessage(obj: unknown): obj is Message {
     "ts" in obj &&
     typeof obj.ts === "number" &&
     "body" in obj &&
-    typeof obj.body === "string"
+    typeof obj.body === "string" &&
+    (!("in_reply_to" in obj) || typeof (obj as { in_reply_to: unknown }).in_reply_to === "string")
   );
 }
 

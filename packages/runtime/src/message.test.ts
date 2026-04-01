@@ -2,7 +2,17 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acknowledge, claim, consume, isMessage, list, quarantine, read, send } from "./message";
+import {
+  acknowledge,
+  claim,
+  consume,
+  isMessage,
+  list,
+  quarantine,
+  read,
+  send,
+  sendReply,
+} from "./message";
 
 let root: string;
 const AGENT = "test-agent";
@@ -157,6 +167,38 @@ test("consume reads and moves message to .processed", async () => {
   // Should exist in .processed
   const processedFile = Bun.file(join(inboxDir, ".processed", filename));
   expect(await processedFile.exists()).toBe(true);
+});
+
+// --- sendReply ---
+
+test("sendReply writes outbox message with in_reply_to", async () => {
+  const outboxDir = join(root, AGENT, "outbox");
+  mkdirSync(outboxDir, { recursive: true });
+
+  const msg = await sendReply(root, AGENT, "runner", "reply body", "1234-abcd.msg");
+
+  expect(msg.in_reply_to).toBe("1234-abcd.msg");
+  expect(msg.from).toBe("runner");
+  expect(msg.body).toBe("reply body");
+
+  const files = await list(outboxDir);
+  expect(files).toHaveLength(1);
+  const raw = await Bun.file(join(outboxDir, files[0] as string)).json();
+  expect(raw.in_reply_to).toBe("1234-abcd.msg");
+});
+
+// --- isMessage with in_reply_to ---
+
+test("isMessage accepts message with in_reply_to", () => {
+  expect(
+    isMessage({ v: 1, id: "abc", from: "sender", ts: 123, body: "hello", in_reply_to: "msg.msg" }),
+  ).toBe(true);
+});
+
+test("isMessage rejects message with non-string in_reply_to", () => {
+  expect(
+    isMessage({ v: 1, id: "abc", from: "sender", ts: 123, body: "hello", in_reply_to: 42 }),
+  ).toBe(false);
 });
 
 // --- quarantine ---
