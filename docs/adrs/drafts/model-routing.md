@@ -191,9 +191,18 @@ Mitigation options:
   loaded simultaneously (default: 1 on GPU). Set to 2–3 to eliminate thrashing when running
   agents on different models.
 
-The `loom.yml` pattern of mixing a small triage model with a large research model is best
-suited to multi-GPU or cloud deployments. For a typical homelab, a single shared model is
-the recommended starting point.
+Recommended deployment patterns:
+
+| Setup | Recommendation |
+|---|---|
+| Single GPU (homelab) | One shared Ollama model for all agents |
+| Multi-GPU | Multiple Ollama models, `OLLAMA_MAX_LOADED_MODELS` tuned to GPU count |
+| Mixed local + cloud | Local Ollama for lightweight/frequent agents, cloud (Anthropic, OpenRouter) for agents that need stronger reasoning or have low traffic — avoids burning cloud budget on routine tasks |
+| Cloud only | Any provider mix, no thrashing concern |
+
+The mixed local + cloud pattern is well-supported by the prefix routing: triage and notification
+agents run `qwen2.5:3b` locally at zero cost, while a research agent is pointed at
+`anthropic/claude-sonnet-4-6` for tasks where quality matters.
 
 ## Alternatives considered
 
@@ -213,4 +222,4 @@ common case of one provider per agent. Rejected in favour of prefix-in-model-str
 | Date | Change |
 |---|---|
 | 2026-04-01 | **Added provider implementation section.** All providers use plain `fetch()` — no SDKs, no external dependencies. Ollama uses its native `/api/chat` endpoint; Anthropic calls `/v1/messages` directly. OpenAI-compatible escape hatch documented via `OPENAI_BASE_URL`. |
-| 2026-04-01 | **Added Ollama multi-model thrashing note.** Documented model-swap latency on single-GPU setups and recommended using one shared model for homelab deployments. |
+| 2026-04-01 | **Added Ollama multi-model thrashing note.** Documented model-swap latency on single-GPU setups and recommended using one shared model for homelab deployments. Added deployment pattern table covering single-GPU, multi-GPU, mixed local+cloud, and cloud-only setups. |
