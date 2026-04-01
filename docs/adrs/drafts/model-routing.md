@@ -76,6 +76,21 @@ function resolveProvider(model: string): { provider: Provider; modelName: string
 }
 ```
 
+### Provider implementation — zero external dependencies
+
+All providers are implemented as plain HTTP calls using `fetch()`. No SDKs, no
+external runtime dependencies. This is a hard constraint for `@losoft/loom-runtime`.
+
+Ollama exposes two APIs — a native `/api/chat` and an OpenAI-compatible `/v1/chat/completions`.
+loom uses the *native* `/api/chat` endpoint to avoid coupling the implementation to OpenAI's
+request/response format. The OpenAI-compatible mode remains available as an escape hatch via
+`OPENAI_BASE_URL=http://localhost:11434/v1`.
+
+Anthropic does not support the OpenAI format. Its provider adapter calls the Anthropic REST API
+directly (`/v1/messages`), normalising the response into `ChatChunk` internally.
+
+OpenAI and OpenRouter both use the same request format and are called directly via `fetch()`.
+
 ### Provider interface
 
 All providers implement the same minimal interface:
