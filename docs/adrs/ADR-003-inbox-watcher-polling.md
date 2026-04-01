@@ -17,13 +17,10 @@ Options:
 
 Use polling at a configurable interval (default 200 ms).
 
-The implementation is split into two layers:
-
-- **`InboxWatcher`** — polls a single inbox directory, consumes `.msg` files, and
-  emits `(filename, message)` events. This is the low-level primitive.
-- **`InboxRouter`** — manages one `InboxWatcher` per agent, forwarding events with
-  the agent name prepended: `(agentName, filename, message)`. This is the multi-agent
-  coordinator.
+**`InboxWatcher`** polls a single inbox directory, validates `.msg` files, and emits
+`(filename)` events — one per new file. It does **not** move or consume files.
+Lifecycle management (`claim` / `acknowledge` / `fail`) is the responsibility of the
+consumer (the runner).
 
 ### Three-phase message lifecycle
 
@@ -47,18 +44,15 @@ inbox/
 ```
 InboxWatcher.poll()
   list *.msg files in inbox/ (sorted by filename → oldest first)
-  for each file:
-    read + parse JSON
-    emit('message', filename, message)
-
-InboxRouter.add(agent)
-  create InboxWatcher.forAgent(home, agent)
-  forward events with agent name prefix
-  start watcher
+  for each file not already seen:
+    read + validate JSON
+    if valid   → add to seen set, emit('message', filename)
+    if invalid → quarantine to .unreadable/, emit('error', err)
+  remove files from seen set that no longer exist in inbox/
 ```
 
 The watcher emits events; the **runner** (ADR-005) owns the three-phase
-transitions. When the runner receives a message event, it:
+transitions. When the runner receives a `message` event, it:
 
 1. Calls `claim()` — moves the file to `inbox/.in-progress/`
 2. Processes the message (LLM call, tool execution, writes response to `outbox/`)
@@ -112,16 +106,14 @@ so `ls inbox/` still gives a clean view of pending messages.
   for conversational agents. For tighter latency, callers can set `pollIntervalMs: 50`.
 - At high message volume, many small files accumulate in `.processed/`. A future
   compaction pass can archive these to NDJSON logs.
-- `InboxWatcher` extends `EventEmitter`, emits `(filename, message)`. Single-agent
-  callers (e.g. `AgentRunner`) use it directly via `InboxWatcher.forAgent(home, name)`.
-  Errors are surfaced via the standard `'error'` event.
-- `InboxRouter` manages multiple `InboxWatcher` instances, emits
-  `(agentName, filename, message)`. Multi-agent callers (e.g. supervisor) use it
-  via `router.add(agent)` / `router.remove(agent)` / `router.stop()`.
-- **`home` parameter convention:** `InboxWatcher.forAgent(home, name)` and
-  `InboxRouter` expect `home` to be the agents root directory
-  (`$LOOM_HOME/agents`), not `$LOOM_HOME` itself. The watcher constructs the
-  inbox path as `{home}/{name}/inbox/`.
+- `InboxWatcher` extends `EventEmitter`, emits `(filename)` — filename only, no
+  parsed message. The consumer calls `claim()` to read and take ownership.
+  Invalid files are quarantined to `.unreadable/` and surfaced via the `'error'` event.
+  A `seen` set prevents duplicate emissions across poll cycles; entries are removed
+  when the file leaves the inbox (claimed, moved, or deleted).
+- **`home` parameter convention:** `InboxWatcher.forAgent(home, name)` expects
+  `home` to be the agents root directory (`$LOOM_HOME/agents`), not `$LOOM_HOME`
+  itself. The watcher constructs the inbox path as `{home}/{name}/inbox/`.
 
 ---
 
@@ -132,3 +124,5 @@ so `ls inbox/` still gives a clean view of pending messages.
 | 2026-03-31 | **Removed "not yet implemented" note.** The three-phase lifecycle (claim → process → acknowledge) is the decided design, not a future target. |
 | 2026-03-31 | **Clarified watcher vs runner responsibility.** `InboxWatcher` detects and emits; the runner owns the claim/process/acknowledge transitions. Updated pseudocode to reflect this separation. |
 | 2026-03-31 | **Documented `home` parameter convention.** `home` is `$LOOM_HOME/agents`, not `$LOOM_HOME`. |
+| 2026-04-01 | **`InboxWatcher` is now notification-only.** It no longer calls `consume()`. It validates files, emits `(filename)` events, and quarantines invalid files. A `seen` set prevents duplicate emissions. Lifecycle transitions are fully delegated to the consumer. |
+| 2026-04-01 | **Removed `InboxRouter`.** It was never used — ADR-005 runners are self-sufficient and each polls its own inbox directly. There is no central message dispatcher. |

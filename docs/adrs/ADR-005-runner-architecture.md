@@ -71,6 +71,19 @@ The runner processes messages through three filesystem phases (see ADR-003):
 5. Move from .in-progress/ to .processed/  — "Done"
 ```
 
+### Sequential processing
+
+Messages are processed one at a time (FIFO). `InboxWatcher` may emit multiple
+filenames in a single poll cycle (all files found in inbox/). The runner uses an
+internal drain queue: filenames are enqueued on each `message` event and drained
+one at a time. This ensures only one LLM call is in flight per agent at any time
+and keeps status transitions (`running` / `idle`) consistent.
+
+### Outbox reply format
+
+Responses are written with `sendReply(root, agent, body, inReplyTo)`. The `from`
+field is always the agent's own name — no separate `from` parameter is needed.
+
 ### Idempotent restart recovery
 
 On startup, the runner checks `inbox/.in-progress/` for messages that were
@@ -193,3 +206,5 @@ and tight coupling to the supervisor. Rejected.
 | Date | Change |
 |---|---|
 | 2026-03-31 | **Removed dangling "plugin protocol ADR" reference.** The tool execution protocol is described inline in this ADR. A separate plugin protocol ADR may be added in the future if the protocol warrants its own decision record. |
+| 2026-04-01 | **Added sequential processing.** The runner uses a drain queue to ensure FIFO, one-at-a-time message processing. Only one LLM call is in flight per agent at any time. |
+| 2026-04-01 | **`sendReply` drops the `from` parameter.** Replies always originate from the agent itself; `from` is derived from `agent` internally. |

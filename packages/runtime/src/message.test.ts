@@ -176,10 +176,10 @@ test("sendReply writes outbox message with in_reply_to", async () => {
   const outboxDir = join(root, AGENT, "outbox");
   mkdirSync(outboxDir, { recursive: true });
 
-  const msg = await sendReply(root, AGENT, "runner", "reply body", "1234-abcd.msg");
+  const msg = await sendReply(root, AGENT, "reply body", "1234-abcd.msg");
 
   expect(msg.in_reply_to).toBe("1234-abcd.msg");
-  expect(msg.from).toBe("runner");
+  expect(msg.from).toBe(AGENT);
   expect(msg.body).toBe("reply body");
 
   const files = await list(outboxDir);
