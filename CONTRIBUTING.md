@@ -37,7 +37,6 @@ Each package builds for both **Bun** (`dist/bun/`) and **Node.js** (`dist/node/`
 - `AgentProcess` (filesystem-backed agent state)
 - `ProcessTable`
 - `InboxWatcher` (polling-based)
-- `InboxRouter`
 - Message utilities (`send`, `read`, `consume`, `list`, `quarantine`)
 - `loom.yml` parsing
 - **Zero external runtime dependencies** — must run with nothing beyond Bun installed
