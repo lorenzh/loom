@@ -17,6 +17,7 @@ bun run check            # biome check (lint + format)
 bun run fix              # biome auto-fix
 bun run lint             # lint only
 bun run format           # format only
+bun run loom <command>   # run the CLI from source (e.g. bun run loom ps)
 ```
 
 Default to using Bun instead of Node.js for all commands.
