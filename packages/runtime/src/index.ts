@@ -7,7 +7,8 @@ export { AgentLogger, type LogEntry, type LogLevel } from "./logger";
 export {
   acknowledge,
   claim,
-  consume,
+  type FailError,
+  fail,
   isMessage,
   list,
   type Message,

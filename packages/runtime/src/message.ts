@@ -8,7 +8,7 @@
  * to a `.processed/` subdirectory for auditability.
  */
 
-import { exists, mkdir, readdir, rename } from "node:fs/promises";
+import { exists, mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const MESSAGE_VERSION = 1;
@@ -145,4 +145,23 @@ export async function consume(dir: string, filename: string): Promise<Message> {
   const msg = await claim(dir, filename);
   await acknowledge(dir, filename);
   return msg;
+}
+
+export interface FailError {
+  ts: string;
+  attempts: number;
+  last_error: string;
+  error_type: string;
+}
+
+/** Move a message from .in-progress/ to .failed/ and write a companion .error.json file. */
+export async function fail(dir: string, filename: string, error: FailError): Promise<void> {
+  const failedDir = join(dir, ".failed");
+  await mkdir(failedDir, { recursive: true });
+  await rename(join(dir, ".in-progress", filename), join(failedDir, filename));
+  await writeFile(
+    join(failedDir, `${filename}.error.json`),
+    JSON.stringify(error, null, 2),
+    "utf8",
+  );
 }

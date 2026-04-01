@@ -6,6 +6,7 @@ import {
   acknowledge,
   claim,
   consume,
+  fail,
   isMessage,
   list,
   quarantine,
@@ -199,6 +200,50 @@ test("isMessage rejects message with non-string in_reply_to", () => {
   expect(
     isMessage({ v: 1, id: "abc", from: "sender", ts: 123, body: "hello", in_reply_to: 42 }),
   ).toBe(false);
+});
+
+// --- fail ---
+
+test("fail moves message from .in-progress to .failed", async () => {
+  const inboxDir = join(root, AGENT, "inbox");
+  await send(root, AGENT, "sender", "fail test");
+  const files = await list(inboxDir);
+  const filename = files[0] as string;
+
+  await claim(inboxDir, filename);
+  await fail(inboxDir, filename, {
+    ts: new Date().toISOString(),
+    attempts: 3,
+    last_error: "timeout",
+    error_type: "TimeoutError",
+  });
+
+  // Should not exist in .in-progress
+  expect(await Bun.file(join(inboxDir, ".in-progress", filename)).exists()).toBe(false);
+
+  // Should exist in .failed
+  expect(await Bun.file(join(inboxDir, ".failed", filename)).exists()).toBe(true);
+});
+
+test("fail writes companion .error.json", async () => {
+  const inboxDir = join(root, AGENT, "inbox");
+  await send(root, AGENT, "sender", "fail test");
+  const files = await list(inboxDir);
+  const filename = files[0] as string;
+
+  await claim(inboxDir, filename);
+  const errorInfo = {
+    ts: "2026-01-01T00:00:00.000Z",
+    attempts: 2,
+    last_error: "network error",
+    error_type: "NetworkError",
+  };
+  await fail(inboxDir, filename, errorInfo);
+
+  const errorFile = Bun.file(join(inboxDir, ".failed", `${filename}.error.json`));
+  expect(await errorFile.exists()).toBe(true);
+  const parsed = await errorFile.json();
+  expect(parsed).toEqual(errorInfo);
 });
 
 // --- quarantine ---
