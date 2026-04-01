@@ -1,0 +1,95 @@
+import { join } from "node:path";
+import { AgentProcess, acknowledge, claim, InboxWatcher, sendReply } from "@losoft/loom-runtime";
+import { type ProviderRegistry, resolveProvider } from "./provider";
+
+export interface AgentRunnerOptions {
+  /** Polling interval in milliseconds (default 200). */
+  pollIntervalMs?: number;
+  /** System prompt sent to the LLM on every turn. */
+  systemPrompt?: string;
+}
+
+/**
+ * Manages a single agent's message loop: polls inbox, calls LLM, writes outbox replies.
+ *
+ * Messages are processed strictly sequentially (FIFO). A drain queue ensures that
+ * even if multiple messages arrive in one poll cycle, only one LLM call is in flight
+ * at a time.
+ *
+ * Uses the three-phase message lifecycle (inbox → .in-progress → .processed) so that
+ * in-flight messages are recoverable after a crash.
+ */
+export class AgentRunner {
+  private readonly agent: AgentProcess;
+  private readonly watcher: InboxWatcher;
+  private readonly inboxDir: string;
+  private readonly systemPrompt: string;
+  private readonly queue: string[] = [];
+  private draining = false;
+  private resolveRun: (() => void) | null = null;
+
+  constructor(
+    /** Agents root directory — $LOOM_HOME/agents. */
+    private readonly home: string,
+    private readonly agentName: string,
+    private readonly registry: ProviderRegistry,
+    options?: AgentRunnerOptions,
+  ) {
+    this.agent = new AgentProcess(home, agentName);
+    this.inboxDir = join(home, agentName, "inbox");
+    this.systemPrompt = options?.systemPrompt ?? "";
+    this.watcher = InboxWatcher.forAgent(home, agentName, {
+      pollIntervalMs: options?.pollIntervalMs,
+    });
+
+    this.watcher.on("message", (filename) => {
+      this.queue.push(filename);
+      this.drain();
+    });
+  }
+
+  /** Process queued messages one at a time (FIFO). */
+  private async drain(): Promise<void> {
+    if (this.draining) return;
+    this.draining = true;
+    try {
+      while (this.queue.length > 0) {
+        const filename = this.queue.shift();
+        if (filename !== undefined) await this.processMessage(filename);
+      }
+    } finally {
+      this.draining = false;
+    }
+  }
+
+  /** Process a single message: claim → LLM → reply → acknowledge. */
+  private async processMessage(filename: string): Promise<void> {
+    const message = await claim(this.inboxDir, filename);
+    this.agent.status = "running";
+
+    const { provider, modelName } = resolveProvider(this.agent.model, this.registry);
+    const response = await provider.chat(modelName, this.systemPrompt, [
+      { role: "user", content: message.body },
+    ]);
+
+    await sendReply(this.home, this.agentName, response.text, filename);
+    await acknowledge(this.inboxDir, filename);
+    this.agent.status = "idle";
+  }
+
+  /** Start the agent loop. Returns a Promise that resolves when stop() is called. */
+  run(): Promise<void> {
+    this.agent.status = "idle";
+    this.watcher.start();
+    return new Promise<void>((resolve) => {
+      this.resolveRun = resolve;
+    });
+  }
+
+  /** Stop the polling loop. */
+  stop(): void {
+    this.watcher.stop();
+    this.resolveRun?.();
+    this.resolveRun = null;
+  }
+}

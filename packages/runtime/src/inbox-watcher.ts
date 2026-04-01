@@ -1,16 +1,18 @@
 /**
- * @file Inbox directory watcher that emits parsed messages when new `.msg` files appear.
+ * @file Inbox directory watcher that notifies when new `.msg` files appear.
  * @module @loom/runtime/inbox-watcher
  *
  * Polls a given inbox directory at a configurable interval (default 200 ms).
- * When `.msg` files are found, they are read, parsed, moved to `.processed/`,
- * and emitted as `message` events. The timer is unref'd so it does not prevent
+ * When new `.msg` files are found they are validated and emitted as `message`
+ * events. Files are NOT moved — lifecycle management (claim / acknowledge /
+ * fail) is the responsibility of the consumer. Invalid files are quarantined
+ * and emitted as `error` events. The timer is unref'd so it does not prevent
  * the process from exiting.
  */
 
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
-import { consume, list, type Message, quarantine } from "./message";
+import { list, quarantine, read } from "./message";
 
 export interface InboxWatcherOptions {
   /** Polling interval in milliseconds (default 200). */
@@ -18,21 +20,22 @@ export interface InboxWatcherOptions {
 }
 
 interface InboxWatcherEventMap {
-  message: [filename: string, message: Message];
+  message: [filename: string];
   error: [error: Error];
 }
 
 /**
- * Polls an inbox directory for new `.msg` files, reads and parses them,
- * moves them to `.processed/`, and emits a `message` event with the
- * filename and parsed {@link Message}.
+ * Polls an inbox directory for new `.msg` files, validates them, and emits a
+ * `message` event with the filename. Files are not moved — the consumer is
+ * responsible for calling `claim()` / `acknowledge()` / `fail()`.
  *
- * @fires message When a new `.msg` file is consumed from the inbox directory.
- * @fires error When a file cannot be read or parsed.
+ * @fires message When a new valid `.msg` file is detected in the inbox.
+ * @fires error When a file cannot be read or parsed; the file is quarantined.
  */
 export class InboxWatcher extends EventEmitter<InboxWatcherEventMap> {
-  private timer: Timer | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
+  private readonly seen = new Set<string>();
   readonly inbox: string;
   readonly pollIntervalMs: number;
 
@@ -42,17 +45,26 @@ export class InboxWatcher extends EventEmitter<InboxWatcherEventMap> {
     this.pollIntervalMs = options?.pollIntervalMs ?? 200;
   }
 
-  /** Runs a single poll cycle: list, consume, and emit for each `.msg` file. */
+  /** Runs a single poll cycle: detect new files, validate, emit. */
   private async poll(): Promise<void> {
     if (this.polling || !this.timer) return;
     this.polling = true;
     try {
       const files = await list(this.inbox);
+
+      // Remove files that have left the inbox (claimed, moved, etc.)
+      for (const filename of this.seen) {
+        if (!files.includes(filename)) {
+          this.seen.delete(filename);
+        }
+      }
+
       for (const filename of files) {
-        if (!this.timer) break;
+        if (this.seen.has(filename)) continue;
         try {
-          const message = await consume(this.inbox, filename);
-          this.emit("message", filename, message);
+          await read(this.inbox, filename);
+          this.seen.add(filename);
+          this.emit("message", filename);
         } catch (err) {
           await quarantine(this.inbox, filename);
           this.emit("error", err instanceof Error ? err : new Error(String(err)));

@@ -44,14 +44,20 @@ export function send(root: string, agent: string, from: string, body: string): P
 export function sendReply(
   root: string,
   agent: string,
-  from: string,
   body: string,
   inReplyTo: string,
 ): Promise<Message> {
   const id = generateId();
   const ts = Date.now();
 
-  const message: Message = { v: MESSAGE_VERSION, id, from, ts, body, in_reply_to: inReplyTo };
+  const message: Message = {
+    v: MESSAGE_VERSION,
+    id,
+    from: agent,
+    ts,
+    body,
+    in_reply_to: inReplyTo,
+  };
 
   const path = join(root, agent, "outbox", `${ts}-${id}.msg`);
   return Bun.file(path)
