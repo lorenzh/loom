@@ -37,10 +37,11 @@ test("constructor creates inbox, outbox, memory, logs, crashes subdirectories", 
 });
 
 test("constructor is idempotent — calling twice does not error", () => {
-  expect(() => {
-    new AgentProcess(home, "alice");
-    new AgentProcess(home, "alice");
-  }).not.toThrow();
+  new AgentProcess(home, "alice");
+  new AgentProcess(home, "alice");
+  for (const subdir of ["inbox", "outbox", "memory", "logs", "crashes"]) {
+    expect(existsSync(join(home, "alice", subdir))).toBe(true);
+  }
 });
 
 test("pid defaults to null", () => {
