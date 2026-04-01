@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentProcess, list, read, send } from "@losoft/loom-runtime";
+import { AgentProcess, claim, list, read, send, sendReply } from "@losoft/loom-runtime";
 import { AgentRunner } from "./agent-runner";
 import { type Provider, ProviderRegistry } from "./provider";
 
@@ -192,6 +192,68 @@ test("messages arriving in the same poll cycle are processed sequentially, not c
   expect(starts).toHaveLength(2);
   expect(ends).toHaveLength(2);
   expect(starts[1]!).toBeGreaterThanOrEqual(ends[0]!);
+});
+
+test("recover: skips already-replied in-progress message, no duplicate LLM call", async () => {
+  new AgentProcess(home, AGENT);
+  const inboxMsg = await send(home, AGENT, "user", "pre-crash");
+  const inboxDir = join(home, AGENT, "inbox");
+  const inboxFiles = await list(inboxDir);
+  const filename = inboxFiles[0]!;
+
+  // Simulate crash state: message was claimed and reply was written, but not acknowledged
+  await claim(inboxDir, filename);
+  await sendReply(home, AGENT, "pre-crash reply", filename);
+
+  let callCount = 0;
+  const registry = new ProviderRegistry();
+  registry.register("ollama", {
+    chat: async () => {
+      callCount++;
+      return { text: "should not be called" };
+    },
+  } satisfies Provider);
+
+  const runner = new AgentRunner(home, AGENT, registry, { pollIntervalMs: 20 });
+  const runPromise = runner.run();
+
+  // Wait a couple of poll cycles then stop
+  await new Promise<void>((r) => setTimeout(r, 80));
+  runner.stop();
+  await runPromise;
+
+  expect(callCount).toBe(0);
+  const outboxFiles = await list(join(home, AGENT, "outbox"));
+  expect(outboxFiles).toHaveLength(1);
+  const reply = await read(join(home, AGENT, "outbox"), outboxFiles[0]!);
+  expect(reply.in_reply_to).toContain(inboxMsg.id);
+  expect(await list(inboxDir)).toHaveLength(0);
+});
+
+test("recover: reprocesses in-progress message that has no outbox reply", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "unfinished");
+  const inboxDir = join(home, AGENT, "inbox");
+  const inboxFiles = await list(inboxDir);
+  const filename = inboxFiles[0]!;
+
+  // Simulate crash state: message was claimed but runner crashed before writing the reply
+  await claim(inboxDir, filename);
+
+  const runner = new AgentRunner(home, AGENT, makeRegistry("recovered reply"), {
+    pollIntervalMs: 20,
+  });
+  const runPromise = runner.run();
+
+  const outboxDir = join(home, AGENT, "outbox");
+  const outboxFiles = await waitForOutbox(outboxDir);
+  runner.stop();
+  await runPromise;
+
+  expect(outboxFiles).toHaveLength(1);
+  const reply = await read(outboxDir, outboxFiles[0]!);
+  expect(reply.body).toBe("recovered reply");
+  expect(await list(inboxDir)).toHaveLength(0);
 });
 
 test("stop() halts the polling loop", async () => {

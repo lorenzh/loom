@@ -1,5 +1,12 @@
 import { join } from "node:path";
-import { AgentProcess, acknowledge, claim, InboxWatcher, sendReply } from "@losoft/loom-runtime";
+import {
+  AgentProcess,
+  acknowledge,
+  claim,
+  InboxWatcher,
+  recover,
+  sendReply,
+} from "@losoft/loom-runtime";
 import { type ProviderRegistry, resolveProvider } from "./provider";
 
 export interface AgentRunnerOptions {
@@ -27,6 +34,7 @@ export class AgentRunner {
   private readonly queue: string[] = [];
   private draining = false;
   private resolveRun: (() => void) | null = null;
+  private stopped = false;
 
   constructor(
     /** Agents root directory — $LOOM_HOME/agents. */
@@ -78,8 +86,10 @@ export class AgentRunner {
   }
 
   /** Start the agent loop. Returns a Promise that resolves when stop() is called. */
-  run(): Promise<void> {
+  async run(): Promise<void> {
     this.agent.status = "idle";
+    await recover(this.inboxDir, join(this.home, this.agentName, "outbox"));
+    if (this.stopped) return;
     this.watcher.start();
     return new Promise<void>((resolve) => {
       this.resolveRun = resolve;
@@ -88,6 +98,7 @@ export class AgentRunner {
 
   /** Stop the polling loop. */
   stop(): void {
+    this.stopped = true;
     this.watcher.stop();
     this.resolveRun?.();
     this.resolveRun = null;
