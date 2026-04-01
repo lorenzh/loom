@@ -76,6 +76,21 @@ function resolveProvider(model: string): { provider: Provider; modelName: string
 }
 ```
 
+### Provider implementation — zero external dependencies
+
+All providers are implemented as plain HTTP calls using `fetch()`. No SDKs, no
+external runtime dependencies. This is a hard constraint for `@losoft/loom-runtime`.
+
+Ollama exposes two APIs — a native `/api/chat` and an OpenAI-compatible `/v1/chat/completions`.
+loom uses the *native* `/api/chat` endpoint to avoid coupling the implementation to OpenAI's
+request/response format. The OpenAI-compatible mode remains available as an escape hatch via
+`OPENAI_BASE_URL=http://localhost:11434/v1`.
+
+Anthropic does not support the OpenAI format. Its provider adapter calls the Anthropic REST API
+directly (`/v1/messages`), normalising the response into `ChatChunk` internally.
+
+OpenAI and OpenRouter both use the same request format and are called directly via `fetch()`.
+
 ### Provider interface
 
 All providers implement the same minimal interface:
@@ -163,6 +178,32 @@ A future `loom cost` command can aggregate this.
 - Provider credentials in environment variables means they are visible to all
   processes on the machine. Not a concern for homelab; is a concern for shared servers.
 
+**Ollama multi-model thrashing (local GPU setups):**
+Ollama loads one model into VRAM at a time by default. When multiple agents use different
+models concurrently, Ollama swaps models in and out on every request — each swap can take
+5–30 seconds depending on model size and hardware. Under sustained load the system spends
+more time swapping than generating, effectively serializing all agents.
+
+Mitigation options:
+- **Use one model for all agents** — the simplest and most reliable approach for single-GPU
+  setups. A model capable enough for the heaviest task works fine for lighter ones.
+- **Increase `OLLAMA_MAX_LOADED_MODELS`** — if VRAM permits, Ollama can keep multiple models
+  loaded simultaneously (default: 1 on GPU). Set to 2–3 to eliminate thrashing when running
+  agents on different models.
+
+Recommended deployment patterns:
+
+| Setup | Recommendation |
+|---|---|
+| Single GPU (homelab) | One shared Ollama model for all agents |
+| Multi-GPU | Multiple Ollama models, `OLLAMA_MAX_LOADED_MODELS` tuned to GPU count |
+| Mixed local + cloud | Local Ollama for lightweight/frequent agents, cloud (Anthropic, OpenRouter) for agents that need stronger reasoning or have low traffic — avoids burning cloud budget on routine tasks |
+| Cloud only | Any provider mix, no thrashing concern |
+
+The mixed local + cloud pattern is well-supported by the prefix routing: triage and notification
+agents run `qwen2.5:3b` locally at zero cost, while a research agent is pointed at
+`anthropic/claude-sonnet-4-6` for tasks where quality matters.
+
 ## Alternatives considered
 
 **Unified OPENAI_BASE_URL approach:** Point everything at an OpenAI-compatible endpoint
@@ -173,3 +214,12 @@ model; supported as an escape hatch via `OPENAI_BASE_URL`.
 **Separate provider config section in loom.yml:** A `providers:` block defining
 named providers, then referencing them from agents. More explicit but verbose for the
 common case of one provider per agent. Rejected in favour of prefix-in-model-string.
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-04-01 | **Added provider implementation section.** All providers use plain `fetch()` — no SDKs, no external dependencies. Ollama uses its native `/api/chat` endpoint; Anthropic calls `/v1/messages` directly. OpenAI-compatible escape hatch documented via `OPENAI_BASE_URL`. |
+| 2026-04-01 | **Added Ollama multi-model thrashing note.** Documented model-swap latency on single-GPU setups and recommended using one shared model for homelab deployments. Added deployment pattern table covering single-GPU, multi-GPU, mixed local+cloud, and cloud-only setups. |
