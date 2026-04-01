@@ -2,6 +2,8 @@
 
 > A local-first agent runtime where agents are Unix processes, all state lives in the filesystem, and everything is observable with standard Unix tools.
 
+[![GitHub stars](https://img.shields.io/github/stars/lorenzh/loom?style=social)](https://github.com/lorenzh/loom)
+
 > [!WARNING]
 > **Early development.** Most features described here are not yet implemented. Expect frequent breaking changes.
 
