@@ -188,3 +188,11 @@ model; supported as an escape hatch via `OPENAI_BASE_URL`.
 **Separate provider config section in loom.yml:** A `providers:` block defining
 named providers, then referencing them from agents. More explicit but verbose for the
 common case of one provider per agent. Rejected in favour of prefix-in-model-string.
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-04-01 | **Added provider implementation section.** All providers use plain `fetch()` — no SDKs, no external dependencies. Ollama uses its native `/api/chat` endpoint; Anthropic calls `/v1/messages` directly. OpenAI-compatible escape hatch documented via `OPENAI_BASE_URL`. |

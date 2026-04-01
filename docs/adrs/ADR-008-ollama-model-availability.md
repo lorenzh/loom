@@ -1,7 +1,9 @@
-# Ollama model availability — fail fast with actionable error
+# ADR-008: Ollama model availability — fail fast with actionable error
 
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-04-01
+
+---
 
 ## Context
 
@@ -61,3 +63,11 @@ disk silently, and can stall agent startup for minutes with no visible feedback.
 **Generic HTTP error passthrough:** Surfaces as an opaque `fetch` error. Operators would
 need to read Ollama logs to understand the cause. Rejected — the runtime has enough context
 to produce a better message.
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-04-01 | Initial decision. |
