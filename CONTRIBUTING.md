@@ -10,12 +10,14 @@ loom has a strong opinion: **agents are processes, state is files, everything is
 
 ```
 packages/
-  runtime/   → @losoft/loom-runtime  (zero-dependency core primitives)
-  runner/    → @losoft/loom-runner   (LLM provider abstraction, depends on runtime)
-tools/       → build and publish scripts
-docs/adrs/         → accepted architecture decision records (numbered)
-docs/adrs/drafts/  → draft ADR proposals (unnumbered)
-.githooks/   → shared git hooks
+  runtime/    → @losoft/loom-runtime     (zero-dependency core primitives)
+  runner/     → @losoft/loom-runner      (LLM provider abstraction, depends on runtime)
+  supervisor/ → @losoft/loom-supervisor  (process manager: spawns runners, handles restarts)
+  cli/        → @losoft/loom-cli         (CLI entry point: loom run, loom up, loom ps, …)
+tools/        → build and publish scripts
+docs/adrs/          → accepted architecture decision records (numbered)
+docs/adrs/drafts/   → draft ADR proposals (unnumbered)
+.githooks/    → shared git hooks
 ```
 
 Each package builds for both **Bun** (`dist/bun/`) and **Node.js** (`dist/node/`). The `package.pub.json` in each package defines the dual-target exports. The `tools/build-publish-package.ts` script handles the publish build — it merges `package.json` + `package.pub.json`, strips dev fields, and writes the final package to `dist/`.
