@@ -141,12 +141,14 @@ test("status can be set to stopped", () => {
   const agent = new AgentProcess(home, "alice");
   agent.status = "stopped";
   expect(agent.status).toBe("stopped");
+  expect(readFileSync(join(home, "alice", "status"), "utf8").trim()).toBe("stopped");
 });
 
 test("status can be set to pending", () => {
   const agent = new AgentProcess(home, "alice");
   agent.status = "pending";
   expect(agent.status).toBe("pending");
+  expect(readFileSync(join(home, "alice", "status"), "utf8").trim()).toBe("pending");
 });
 
 test("second AgentProcess for same name reads existing state", () => {
