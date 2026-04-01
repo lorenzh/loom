@@ -1,3 +1,4 @@
+/** @file Environment helpers — resolves loom runtime paths from env vars with sensible defaults. */
 import { homedir } from "node:os";
 import { join } from "node:path";
 

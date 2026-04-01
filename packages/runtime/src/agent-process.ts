@@ -1,3 +1,4 @@
+/** @file Filesystem-backed agent process state — reads and writes per-agent files under $LOOM_HOME/agents/{name}/. */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
