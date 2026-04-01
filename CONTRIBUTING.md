@@ -179,8 +179,48 @@ Accepted ADRs (ADR-001 through ADR-004) live in `docs/adrs/`. Draft proposals li
 - Bun runtime — no Node-specific APIs unless there's no Bun equivalent
 - No external runtime dependencies in `@losoft/loom-runtime` — it must run with zero installs beyond Bun
 - Prefer explicit over clever
-- Every public function needs a one-line JSDoc comment
-- Modules should have a `@file` / `@module` JSDoc header
+### JSDoc
+
+Every module starts with a header comment:
+
+```ts
+/**
+ * @file One sentence describing what this module does.
+ * @module @losoft/loom-runtime/module-name
+ */
+```
+
+Every exported function, class, and interface gets a one-line JSDoc:
+
+```ts
+/** Write a crash record to the agent's crashes/ directory. */
+export function writeCrashRecord(agentDir: string, record: CrashRecord): void { … }
+
+/** Returns true when `obj` conforms to the {@link Message} shape. */
+export function isMessage(obj: unknown): obj is Message { … }
+```
+
+Use `@param` / `@returns` only when the types alone don't tell the full story:
+
+```ts
+/**
+ * Poll the inbox directory and emit a `message` event for each new file.
+ * @param interval Polling interval in milliseconds (default: 500).
+ */
+```
+
+Inline field comments on interfaces go above each field, not at end-of-line:
+
+```ts
+export interface CrashRecord {
+  /** ISO 8601 timestamp of the crash. */
+  ts: string;
+  /** Process exit code, or null if killed by signal. */
+  exitCode: number | null;
+}
+```
+
+Don't add JSDoc to private helpers, internal-only types, or anything where the name and types are already self-explanatory.
 
 ### Formatting (Biome)
 
