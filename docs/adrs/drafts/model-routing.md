@@ -178,6 +178,23 @@ A future `loom cost` command can aggregate this.
 - Provider credentials in environment variables means they are visible to all
   processes on the machine. Not a concern for homelab; is a concern for shared servers.
 
+**Ollama multi-model thrashing (local GPU setups):**
+Ollama loads one model into VRAM at a time by default. When multiple agents use different
+models concurrently, Ollama swaps models in and out on every request — each swap can take
+5–30 seconds depending on model size and hardware. Under sustained load the system spends
+more time swapping than generating, effectively serializing all agents.
+
+Mitigation options:
+- **Use one model for all agents** — the simplest and most reliable approach for single-GPU
+  setups. A model capable enough for the heaviest task works fine for lighter ones.
+- **Increase `OLLAMA_MAX_LOADED_MODELS`** — if VRAM permits, Ollama can keep multiple models
+  loaded simultaneously (default: 1 on GPU). Set to 2–3 to eliminate thrashing when running
+  agents on different models.
+
+The `loom.yml` pattern of mixing a small triage model with a large research model is best
+suited to multi-GPU or cloud deployments. For a typical homelab, a single shared model is
+the recommended starting point.
+
 ## Alternatives considered
 
 **Unified OPENAI_BASE_URL approach:** Point everything at an OpenAI-compatible endpoint
@@ -196,3 +213,4 @@ common case of one provider per agent. Rejected in favour of prefix-in-model-str
 | Date | Change |
 |---|---|
 | 2026-04-01 | **Added provider implementation section.** All providers use plain `fetch()` — no SDKs, no external dependencies. Ollama uses its native `/api/chat` endpoint; Anthropic calls `/v1/messages` directly. OpenAI-compatible escape hatch documented via `OPENAI_BASE_URL`. |
+| 2026-04-01 | **Added Ollama multi-model thrashing note.** Documented model-swap latency on single-GPU setups and recommended using one shared model for homelab deployments. |
