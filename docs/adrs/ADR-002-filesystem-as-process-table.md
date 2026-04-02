@@ -111,7 +111,15 @@ repeated API errors), the runner:
      "error_type": "transient"
    }
    ```
-3. Logs a structured error to the agent's daily log
+3. Writes a **failure reply** to `outbox/` with `"error": true` in the body,
+   preserving `origin` and `in_reply_to` from the original message. This
+   signals downstream agents (e.g. fan-in aggregators) through the normal
+   pipe engine flow — see ADR-009.
+4. Logs a structured error to the agent's daily log
+
+`.failed/` is a **local debug artifact** — it preserves the original message
+and error details for operator inspection. The outbox failure reply is the
+**inter-agent signal** that communicates the failure downstream.
 
 An operator can reprocess failed messages by moving them back to `inbox/`:
 ```sh
@@ -149,3 +157,4 @@ mv agents/researcher/inbox/.failed/1742860000000-a3f9c1d2e5b87041.msg agents/res
 |---|---|
 | 2026-03-31 | **Added `pending` to status values.** ADR-004 and ADR-006 require writing `status: pending` for newly created detached agents. Added to the canonical set. |
 | 2026-03-31 | **Fixed `v` field backwards-compat rule.** Changed "missing `v` → treated as `v: 1`" to "missing `v` → fails validation, message is quarantined." The `v` field is required for all messages. |
+| 2026-04-02 | **Added outbox failure reply to failed message handling.** The runner now writes a failure reply to `outbox/` in addition to moving to `.failed/`. `.failed/` is a local debug artifact; the outbox reply is the inter-agent signal. |

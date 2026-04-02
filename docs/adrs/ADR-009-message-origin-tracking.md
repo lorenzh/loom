@@ -96,11 +96,44 @@ An aggregator agent can use `origin` to collect related messages:
 - Read all pending messages from inbox
 - Group by `.origin`
 - For each complete group (e.g. 3 of 3 checker results), proceed
-- If a checker failed (message in `.failed/` or agent crashed), proceed with
-  available results (2 of 3) rather than blocking
 
-No timeout is needed — failure is detected through existing runtime primitives
-(crash records, `.failed/` directory).
+### Failure signaling through the outbox
+
+When an agent fails to process a message, the failure must be communicated
+downstream through the same channel as success — the outbox. The runner
+handles this:
+
+1. **Graceful failure** — the runner catches the error, moves the message to
+   `inbox/.failed/` (with a companion `.error.json` for local debugging), and
+   writes a **failure reply** to `outbox/` with the same `origin` and
+   `in_reply_to`, plus `"error": true` in the body.
+
+2. **Hard crash** — the supervisor detects the crash and runs recovery. For any
+   message stuck in `inbox/.in-progress/` that will not be retried (restart
+   attempts exhausted), the supervisor writes a failure reply to the crashed
+   agent's `outbox/`.
+
+The pipe engine then forwards failure replies downstream like any other
+message. The aggregator sees all expected responses — some successes, some
+failures — and can decide how to proceed. No timeouts and no cross-agent
+directory observation required.
+
+```
+duplicate-checker-semantic fails processing issue A:
+  1. Runner moves message to inbox/.failed/ (local debug artifact)
+  2. Runner writes to outbox/:
+     {
+       "origin": "1743567200000-abc123.msg",
+       "in_reply_to": "1743567300000-def456.msg",
+       "body": "{\"error\": true, \"reason\": \"model timeout\"}"
+     }
+  3. Pipe engine copies this to duplicate-aggregator/inbox/
+  4. Aggregator groups by origin, sees 3 of 3 (2 success + 1 error)
+```
+
+**Key principle:** `.failed/` is a local debug artifact (visible via `ls`,
+contains stack traces in `.error.json`). The outbox is the only inter-agent
+communication channel — for both success and failure.
 
 ## Consequences
 
@@ -114,7 +147,7 @@ No timeout is needed — failure is detected through existing runtime primitives
 **Bad:**
 - Agents (or pipe routing logic) must remember to propagate `origin` — if an
   agent forgets, downstream correlation breaks. This should be handled by the
-  pipe routing layer, not left to individual agent prompts.
+  pipe engine (see pipe-engine ADR), not left to individual agent prompts.
 
 ## Alternatives considered
 
@@ -139,3 +172,4 @@ query generically. Rejected — the runtime should know about pipeline identity.
 | Date | Change |
 |---|---|
 | 2026-04-02 | Initial draft. |
+| 2026-04-02 | Replaced `.failed/` observation with outbox-based failure signaling. |

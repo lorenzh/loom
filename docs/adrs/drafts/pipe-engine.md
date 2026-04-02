@@ -245,6 +245,40 @@ pipes:
     to: consolidator
 ```
 
+### Origin propagation
+
+When the pipe engine copies a message from one agent's outbox to another's
+inbox, it propagates the `origin` field (see ADR-009). The rules are applied
+automatically by the pipe engine — agents do not need to handle this:
+
+1. If the outbox message has an `origin` field, preserve it as-is.
+2. If the outbox message has no `origin` field (i.e. it is a trigger message),
+   set `origin` to the message's own filename.
+
+This ensures every message in a multi-hop pipeline carries the same `origin`,
+enabling fan-in agents to group related messages.
+
+When a pipe applies a **transform**, the `origin` field is always preserved
+from the original message, even if the jq transform does not include it.
+
+### Failure reply forwarding
+
+The pipe engine forwards failure replies the same as any other outbox message.
+There are two sources of failure replies:
+
+1. **Runner-generated** — when an agent fails to process a message, the runner
+   writes a failure reply to the agent's outbox (with `"error": true` in the
+   body, same `origin` and `in_reply_to` as the original).
+
+2. **Supervisor-generated** — when an agent hard-crashes and has exhausted its
+   restart attempts, the supervisor writes failure replies to the crashed
+   agent's outbox for any messages stuck in `inbox/.in-progress/`.
+
+In both cases, the failure reply appears in the outbox like a normal message.
+The pipe engine copies it downstream. The receiving agent (e.g. a fan-in
+aggregator) sees all expected responses — successes and failures — and can
+decide how to proceed without timeouts or cross-agent directory observation.
+
 ### Error handling
 
 **Destination agent not running:** the pipe engine writes to the inbox regardless.
@@ -358,6 +392,7 @@ are lost on reader crash. File-based inbox is durable.
 ## References
 
 - ADR-003: Inbox watcher via polling — the mechanism the pipe engine relies on
+- ADR-009: Message origin tracking — `origin` field propagated by the pipe engine
 - [ULID spec](https://github.com/ulid/spec) — sortable unique IDs for messages
 - [jq manual](https://stedolan.github.io/jq/manual/) — filter/transform language
 - Unix pipes — the conceptual model, applied to persistent agent communication
