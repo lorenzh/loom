@@ -109,6 +109,13 @@ Defaults:
 
 After `maxRestarts` failures within a `resetWindowMs` (default 3600000ms = 1 hour),
 the agent is considered permanently failed and the supervisor stops restarting it.
+
+When an agent is declared dead (maxRestarts exhausted), the supervisor also writes
+**failure replies** to the agent's `outbox/` for any messages still in
+`inbox/.in-progress/`. Each failure reply builds the `origin` path from the
+orphaned message, with `error: true`. The pipe engine forwards these downstream
+so fan-in aggregators are not left waiting indefinitely (see ADR-009).
+
 An operator can resume the agent by writing `status: pending` and sending SIGHUP
 to the supervisor, or by running `loom stop {name}` followed by
 `loom run --name {name} --detach`.
@@ -231,5 +238,7 @@ runners (ADR-005) are simpler and more resilient.
 
 | Date | Change |
 |---|---|
+| 2026-03-25 | Initial decision. |
 | 2026-03-31 | **Removed `loom restart` command reference.** ADR-006 does not define a `loom restart` command. Replaced with the equivalent operator workflow: write `status: pending` + SIGHUP, or stop + re-run detached. |
 | 2026-03-31 | **Fixed systemd unit file reference.** Changed "is provided" to "will be provided" — the file does not exist yet. |
+| 2026-04-02 | **Added failure reply on agent death.** When maxRestarts is exhausted, the supervisor writes failure replies to the agent's outbox for orphaned `.in-progress/` messages (ADR-009). |

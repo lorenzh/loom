@@ -67,7 +67,7 @@ The runner processes messages through three filesystem phases (see ADR-003):
 1. Pick oldest .msg from inbox/
 2. Move to inbox/.in-progress/        — "I'm working on this"
 3. Call LLM, execute tools
-4. Write response to outbox/          — in_reply_to references inbox filename
+4. Write response to outbox/          — origin path includes inbox filename
 5. Move from .in-progress/ to .processed/  — "Done"
 ```
 
@@ -91,7 +91,7 @@ mid-processing when it last crashed:
 
 ```
 for each file in inbox/.in-progress/:
-  scan outbox/ for any message with in_reply_to == this filename
+  scan outbox/ for any message whose origin ends with this filename
   if found → response already written
     → move from .in-progress/ to .processed/ (finish the ack)
   if not found → processing did not complete
@@ -122,13 +122,25 @@ try a different approach, respond without the tool).
 |---|---|
 | Transient (timeout, rate limit, 5xx) | Retry with exponential backoff (1s, 2s, 4s). Max 3 retries. |
 | Permanent (401 unauthorized, 400 bad request) | Don't retry. |
-| All retries exhausted | Move message to `inbox/.failed/` with companion `.error.json`. Log error. |
+| All retries exhausted | Write failure reply to `outbox/` with `error: true`, building `origin` path per ADR-009 (**first**, for crash safety). Then move message to `inbox/.failed/` with companion `.error.json`. Log error. |
 
 **Tool execution failures:**
 
 Tool errors are sent back to the LLM as error tool results. The LLM handles
 them as part of its normal tool-use flow. The runner does not retry tool calls —
 that is the LLM's decision.
+
+### Incoming error messages
+
+Messages with `"error": true` in the body are **pipeline failure signals** from
+upstream agents (see ADR-009). They arrive via the normal pipe engine flow and
+indicate that an upstream agent failed to process a message in the same pipeline
+run.
+
+Error messages are processed through the LLM like any other message. The LLM
+decides how to handle failures — for example, a fan-in aggregator's prompt can
+instruct the LLM to proceed with partial results when error messages are
+present in a group. The runner does not special-case error messages.
 
 ### Runner modes
 
@@ -155,7 +167,7 @@ scripting, and single-agent use cases.
 supervisor handles lifecycle and routing. Neither depends on the other
 for its core function.
 
-**Idempotent restart.** The `in_reply_to` check ensures no duplicate
+**Idempotent restart.** The `origin` last-segment check ensures no duplicate
 responses after a crash, without requiring transactions or a database.
 
 **Tool execution is transparent.** Plugins are spawned as subprocesses
@@ -205,6 +217,9 @@ and tight coupling to the supervisor. Rejected.
 
 | Date | Change |
 |---|---|
+| 2026-03-30 | Initial decision. |
 | 2026-03-31 | **Removed dangling "plugin protocol ADR" reference.** The tool execution protocol is described inline in this ADR. A separate plugin protocol ADR may be added in the future if the protocol warrants its own decision record. |
 | 2026-04-01 | **Added sequential processing.** The runner uses a drain queue to ensure FIFO, one-at-a-time message processing. Only one LLM call is in flight per agent at any time. |
 | 2026-04-01 | **`sendReply` drops the `from` parameter.** Replies always originate from the agent itself; `from` is derived from `agent` internally. |
+| 2026-04-02 | **Added outbox failure reply on processing failure.** When all retries are exhausted, the runner writes a failure reply to `outbox/` in addition to moving to `.failed/` (ADR-009). |
+| 2026-04-02 | **Error messages processed by LLM.** Incoming `"error": true` messages go through normal processing. The LLM decides how to handle failures (e.g. partial fan-in results). |

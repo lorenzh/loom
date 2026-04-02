@@ -145,3 +145,11 @@ prompts). Rejected.
 **TypeScript config (like Vite):** Maximum flexibility. But requires a bundler/runtime
 to evaluate. Makes config opaque to non-JS tools. Rejected for v1; may be added as
 `loom.config.ts` in a future release for programmatic weave construction.
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-25 | Initial draft. |

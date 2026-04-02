@@ -280,3 +280,11 @@ More efficient than subprocess per call. Rejected for the base case — too comp
 - [Git's subcommand model](https://schacon.github.io/gitbook/1_the_git_object_model.html) — executables named `git-*` discovered on PATH
 - [Kubectl plugins](https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/) — same pattern
 - [jq](https://stedolan.github.io/jq/) and [fx](https://fx.wtf/) — inspiration for stdin/stdout JSON tools
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-26 | Initial draft. |

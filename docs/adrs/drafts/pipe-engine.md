@@ -245,6 +245,37 @@ pipes:
     to: consolidator
 ```
 
+### Origin preservation
+
+When the pipe engine copies a message from one agent's outbox to another's
+inbox, it preserves the `origin` field as-is. The pipe engine does **not**
+modify `origin` — that is the runner's responsibility (see ADR-009).
+
+The runner builds the `origin` path when writing to outbox by appending the
+inbox message's filename to the existing origin. The pipe engine simply
+copies the message faithfully, including whatever `origin` the runner set.
+
+When a pipe applies a **transform**, the `origin` field is always preserved
+from the original message, even if the jq transform does not include it.
+
+### Failure reply forwarding
+
+The pipe engine forwards failure replies the same as any other outbox message.
+There are two sources of failure replies:
+
+1. **Runner-generated** — when an agent fails to process a message, the runner
+   writes a failure reply to the agent's outbox (with `error: true` and the
+   correctly built `origin` path).
+
+2. **Supervisor-generated** — when an agent hard-crashes and has exhausted its
+   restart attempts, the supervisor writes failure replies to the crashed
+   agent's outbox for any messages stuck in `inbox/.in-progress/`.
+
+In both cases, the failure reply appears in the outbox like a normal message.
+The pipe engine copies it downstream. The receiving agent (e.g. a fan-in
+aggregator) sees all expected responses — successes and failures — and can
+decide how to proceed without timeouts or cross-agent directory observation.
+
 ### Error handling
 
 **Destination agent not running:** the pipe engine writes to the inbox regardless.
@@ -358,6 +389,22 @@ are lost on reader crash. File-based inbox is durable.
 ## References
 
 - ADR-003: Inbox watcher via polling — the mechanism the pipe engine relies on
+- ADR-009: Message origin tracking — `origin` field propagated by the pipe engine
 - [ULID spec](https://github.com/ulid/spec) — sortable unique IDs for messages
 - [jq manual](https://stedolan.github.io/jq/manual/) — filter/transform language
 - Unix pipes — the conceptual model, applied to persistent agent communication
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-26 | Initial draft. |
+| 2026-04-02 | **Added origin preservation.** Pipe engine copies `origin` faithfully — runner owns propagation (ADR-009). Origin is always preserved through transforms. |
+| 2026-04-02 | **Added failure reply forwarding.** Pipe engine forwards runner- and supervisor-generated failure replies like any other outbox message. |
+| 2026-04-02 | **Removed `in_reply_to` references.** Failure replies use `origin` path and top-level `error` field instead (ADR-009). |
+
+| Date | Change |
+|---|---|
+| 2026-03-26 | Initial draft. |

@@ -100,6 +100,7 @@ Always an option. Rejected because the Unix process model is already deeply unde
 
 | Date | Change |
 |---|---|
+| 2026-03-26 | Initial decision. |
 | 2026-03-31 | **PID definition corrected.** Changed from "short content hash" to OS process ID integer. The agent *name* is the stable identifier, not the PID. |
 | 2026-03-31 | **Removed `meta.json` and heartbeat references.** The process table uses plain-text files per ADR-002, not a single `meta.json`. Stale process detection uses `process.kill(pid, 0)` per ADR-004. |
 | 2026-03-31 | **Status values aligned with code.** Updated from `running | idle | waiting | stopped | exited` to `running | idle | stopped | pending | dead | error | restarting`. |

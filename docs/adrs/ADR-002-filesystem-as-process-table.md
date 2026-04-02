@@ -73,15 +73,17 @@ The `id` segment is a unique identifier for deduplication and sort-order stabili
   "id": "b7c4e1f2a9d31052",
   "from": "researcher",
   "ts": 1742860003000,
-  "in_reply_to": "1742860000000-a3f9c1d2e5b87041.msg",
+  "origin": "1742860000000-a3f9c1d2e5b87041.msg",
   "body": "Unix was created at Bell Labs in 1969..."
 }
 ```
 
-The `in_reply_to` field references the inbox filename that triggered this response.
-It is used for idempotent restart recovery: when a runner restarts, it checks
-`inbox/.in-progress/` against outbox messages with matching `in_reply_to` to
-determine if reprocessing is needed (see ADR-005).
+The `origin` field is a slash-delimited path of message filenames tracing the
+pipeline run (see ADR-009). The last segment is the inbox filename that
+triggered this response — used for idempotent restart recovery: when a runner
+restarts, it checks `inbox/.in-progress/` against outbox messages whose origin
+ends with the in-progress filename to determine if reprocessing is needed
+(see ADR-005).
 
 The `v` field is the schema version. It allows safe migration when the message format changes:
 - Missing `v` → fails validation (`isMessage()` requires `v` to be present and numeric). The message is quarantined as unreadable.
@@ -101,8 +103,13 @@ This means operators can always inspect what went wrong with `cat inbox/.unreada
 
 If a message is valid but processing fails after all retries (e.g. LLM timeout,
 repeated API errors), the runner:
-1. Moves it to `inbox/.failed/{original_filename}`
-2. Writes a companion error file `inbox/.failed/{original_filename}.error.json`:
+1. Writes a **failure reply** to `outbox/` with `error: true`, building the
+   `origin` path from the original message (see ADR-009). This signals
+   downstream agents (e.g. fan-in aggregators) through the normal pipe engine
+   flow. **This step is first** so the downstream signal is preserved even if
+   the runner crashes before completing the remaining steps.
+2. Moves the message to `inbox/.failed/{original_filename}`
+3. Writes a companion error file `inbox/.failed/{original_filename}.error.json`:
    ```json
    {
      "ts": 1742878863000,
@@ -111,7 +118,17 @@ repeated API errors), the runner:
      "error_type": "transient"
    }
    ```
-3. Logs a structured error to the agent's daily log
+4. Logs a structured error to the agent's daily log
+
+If the runner crashes after step 1 but before step 2, the message remains in
+`inbox/.in-progress/`. On restart, recovery finds the matching outbox reply
+(via `origin` last segment) and moves the message to `inbox/.processed/`. The
+downstream signal is preserved; only the `.failed/` debug artifact is lost,
+which is acceptable.
+
+`.failed/` is a **local debug artifact** — it preserves the original message
+and error details for operator inspection. The outbox failure reply is the
+**inter-agent signal** that communicates the failure downstream.
 
 An operator can reprocess failed messages by moving them back to `inbox/`:
 ```sh
@@ -147,5 +164,9 @@ mv agents/researcher/inbox/.failed/1742860000000-a3f9c1d2e5b87041.msg agents/res
 
 | Date | Change |
 |---|---|
+| 2026-03-25 | Initial decision. |
 | 2026-03-31 | **Added `pending` to status values.** ADR-004 and ADR-006 require writing `status: pending` for newly created detached agents. Added to the canonical set. |
 | 2026-03-31 | **Fixed `v` field backwards-compat rule.** Changed "missing `v` → treated as `v: 1`" to "missing `v` → fails validation, message is quarantined." The `v` field is required for all messages. |
+| 2026-04-02 | **Added outbox failure reply to failed message handling.** The runner now writes a failure reply to `outbox/` in addition to moving to `.failed/`. `.failed/` is a local debug artifact; the outbox reply is the inter-agent signal. |
+| 2026-04-02 | **Outbox reply written before `.failed/` move.** Reordered to write the downstream signal first for crash safety. If the runner crashes after the outbox write but before moving to `.failed/`, restart recovery handles it. |
+| 2026-04-02 | **Replaced `in_reply_to` with `origin` in message format.** `origin` is a path-based field that subsumes `in_reply_to` — last segment is the parent message. See ADR-009. |
