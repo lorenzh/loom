@@ -202,3 +202,11 @@ protocol version. Rejected in favour of filesystem communication.
 **No plugin system:** Just document the filesystem layout and let people build their
 own tooling. Tempting. But `loom/client` and the lifecycle hooks are genuinely
 useful and worth the small surface area they add.
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-25 | Initial draft. |

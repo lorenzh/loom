@@ -393,3 +393,18 @@ are lost on reader crash. File-based inbox is durable.
 - [ULID spec](https://github.com/ulid/spec) — sortable unique IDs for messages
 - [jq manual](https://stedolan.github.io/jq/manual/) — filter/transform language
 - Unix pipes — the conceptual model, applied to persistent agent communication
+
+---
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-26 | Initial draft. |
+| 2026-04-02 | **Added origin preservation.** Pipe engine copies `origin` faithfully — runner owns propagation (ADR-009). Origin is always preserved through transforms. |
+| 2026-04-02 | **Added failure reply forwarding.** Pipe engine forwards runner- and supervisor-generated failure replies like any other outbox message. |
+| 2026-04-02 | **Removed `in_reply_to` references.** Failure replies use `origin` path and top-level `error` field instead (ADR-009). |
+
+| Date | Change |
+|---|---|
+| 2026-03-26 | Initial draft. |

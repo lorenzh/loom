@@ -221,5 +221,6 @@ common case of one provider per agent. Rejected in favour of prefix-in-model-str
 
 | Date | Change |
 |---|---|
+| 2026-03-25 | Initial draft. |
 | 2026-04-01 | **Added provider implementation section.** All providers use plain `fetch()` — no SDKs, no external dependencies. Ollama uses its native `/api/chat` endpoint; Anthropic calls `/v1/messages` directly. OpenAI-compatible escape hatch documented via `OPENAI_BASE_URL`. |
 | 2026-04-01 | **Added Ollama multi-model thrashing note.** Documented model-swap latency on single-GPU setups and recommended using one shared model for homelab deployments. Added deployment pattern table covering single-GPU, multi-GPU, mixed local+cloud, and cloud-only setups. |
