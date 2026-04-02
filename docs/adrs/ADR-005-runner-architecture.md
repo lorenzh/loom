@@ -217,6 +217,7 @@ and tight coupling to the supervisor. Rejected.
 
 | Date | Change |
 |---|---|
+| 2026-03-30 | Initial decision. |
 | 2026-03-31 | **Removed dangling "plugin protocol ADR" reference.** The tool execution protocol is described inline in this ADR. A separate plugin protocol ADR may be added in the future if the protocol warrants its own decision record. |
 | 2026-04-01 | **Added sequential processing.** The runner uses a drain queue to ensure FIFO, one-at-a-time message processing. Only one LLM call is in flight per agent at any time. |
 | 2026-04-01 | **`sendReply` drops the `from` parameter.** Replies always originate from the agent itself; `from` is derived from `agent` internally. |

@@ -238,6 +238,7 @@ runners (ADR-005) are simpler and more resilient.
 
 | Date | Change |
 |---|---|
+| 2026-03-25 | Initial decision. |
 | 2026-03-31 | **Removed `loom restart` command reference.** ADR-006 does not define a `loom restart` command. Replaced with the equivalent operator workflow: write `status: pending` + SIGHUP, or stop + re-run detached. |
 | 2026-03-31 | **Fixed systemd unit file reference.** Changed "is provided" to "will be provided" — the file does not exist yet. |
 | 2026-04-02 | **Added failure reply on agent death.** When maxRestarts is exhausted, the supervisor writes failure replies to the agent's outbox for orphaned `.in-progress/` messages (ADR-009). |

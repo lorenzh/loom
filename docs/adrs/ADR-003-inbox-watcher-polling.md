@@ -126,6 +126,7 @@ so `ls inbox/` still gives a clean view of pending messages.
 
 | Date | Change |
 |---|---|
+| 2026-03-25 | Initial decision. |
 | 2026-03-31 | **Removed "not yet implemented" note.** The three-phase lifecycle (claim → process → acknowledge) is the decided design, not a future target. |
 | 2026-03-31 | **Clarified watcher vs runner responsibility.** `InboxWatcher` detects and emits; the runner owns the claim/process/acknowledge transitions. Updated pseudocode to reflect this separation. |
 | 2026-03-31 | **Documented `home` parameter convention.** `home` is `$LOOM_HOME/agents`, not `$LOOM_HOME`. |

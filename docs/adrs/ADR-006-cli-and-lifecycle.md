@@ -191,4 +191,5 @@ be a command, not a function call.
 
 | Date | Change |
 |---|---|
+| 2026-03-30 | Initial decision. |
 | 2026-03-31 | **Audited against codebase.** No design contradictions found. All commands are forward-looking design specifications. |

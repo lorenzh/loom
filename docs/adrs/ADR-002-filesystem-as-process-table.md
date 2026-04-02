@@ -164,6 +164,7 @@ mv agents/researcher/inbox/.failed/1742860000000-a3f9c1d2e5b87041.msg agents/res
 
 | Date | Change |
 |---|---|
+| 2026-03-25 | Initial decision. |
 | 2026-03-31 | **Added `pending` to status values.** ADR-004 and ADR-006 require writing `status: pending` for newly created detached agents. Added to the canonical set. |
 | 2026-03-31 | **Fixed `v` field backwards-compat rule.** Changed "missing `v` → treated as `v: 1`" to "missing `v` → fails validation, message is quarantined." The `v` field is required for all messages. |
 | 2026-04-02 | **Added outbox failure reply to failed message handling.** The runner now writes a failure reply to `outbox/` in addition to moving to `.failed/`. `.failed/` is a local debug artifact; the outbox reply is the inter-agent signal. |
