@@ -314,6 +314,179 @@ The pipe engine only runs inside the supervisor. If running without the supervis
 loom read researcher --follow | loom send writer --stdin
 ```
 
+### Pipe operators
+
+A pipe can include **operators** — stateless or stateful processing steps that
+sit between the source outbox and the destination inbox. Operators compose
+into a pipeline via the `through` key.
+
+#### Operators are directories
+
+Each operator instance is a filesystem-backed directory, consistent with
+loom's "everything is a file" principle:
+
+```
+$LOOM_HOME/pipes/researcher→writer/
+  pipeline.json       # operator chain definition
+  log.jsonl           # pipe-level tracking log
+  operators/
+    0-filter/
+      type            # "filter"
+      config.json     # { "expr": ".type == \"finding\"" }
+      inbox/          # messages arrive here from previous stage
+      outbox/         # messages emitted to next stage
+      state/          # operator working state (if stateful)
+    1-window/
+      type            # "window"
+      config.json     # { "size": 5, "timeout_ms": 30000 }
+      inbox/
+      outbox/
+      state/
+        pending/      # messages buffered in the current window
+        cursor        # last flush timestamp
+```
+
+The prefix (`0-`, `1-`, ...) encodes pipeline order. Each operator reads
+from its `inbox/`, processes, and writes to its `outbox/`. The pipe engine
+wires adjacent stages: operator N's `outbox/` feeds operator N+1's `inbox/`.
+The first operator's inbox is fed from the source agent's outbox; the last
+operator's outbox feeds the destination agent's inbox.
+
+All operator state is inspectable with standard Unix tools:
+
+```sh
+# How many messages are buffered in the window?
+ls pipes/researcher→writer/operators/1-window/state/pending/ | wc -l
+
+# What's the filter config?
+cat pipes/researcher→writer/operators/0-filter/config.json
+
+# Watch messages flow through a stage
+tail -f pipes/researcher→writer/operators/0-filter/outbox/
+```
+
+#### Built-in operators
+
+The pipe engine ships with a set of built-in operators. Each is implemented
+as a function inside the supervisor, but follows the same filesystem contract
+(inbox → process → outbox) so that scriptable operators can replace or extend
+them in the future.
+
+| Operator | Stateful | Description |
+|---|---|---|
+| **filter** | No | Pass or drop messages. jq expression evaluated per message. |
+| **transform** | No | Reshape message JSON. jq expression maps input → output. |
+| **split** | No | One message → N messages. jq expression returns an array; each element becomes a separate message. |
+| **route** | No | Conditional fan-out. Maps jq predicates to named output channels (see below). |
+| **tap** | No | Copy every message to a side-channel directory for observability; original continues downstream. |
+| **window** | Yes | Collect messages by count or time, emit as a single batch message. |
+| **buffer** | Yes | Hold messages until a condition (jq predicate on the buffer contents) is met, then flush. |
+| **dedupe** | Yes | Drop duplicates by a jq key expression. Maintains a seen-keys set in `state/`. |
+| **throttle** | Yes | Rate-limit: forward at most N messages per T seconds. Excess messages wait in `state/pending/`. |
+| **accumulate** | Yes | Fold messages into a running value. jq expression `(state, message) → new_state`. Emits the new state downstream on each input. |
+
+#### Pipeline composition in loom.yml
+
+Simple pipes (no operators) keep the existing syntax:
+
+```yaml
+pipes:
+  - from: researcher
+    to: writer
+    filter: '.priority == "high"'
+```
+
+For multi-stage pipelines, use `through`:
+
+```yaml
+pipes:
+  - from: researcher
+    to: writer
+    through:
+      - filter: '.type == "finding"'
+      - dedupe: '.id'
+      - window: { size: 5, timeout: 30s }
+      - transform: '{ findings: [.[].result], count: length }'
+```
+
+Each entry in `through` is `{ operator_type: config }`. The pipe engine
+creates the operator directories automatically when the supervisor starts.
+
+When `through` is present, top-level `filter` and `transform` keys are
+not allowed (use them inside `through` instead).
+
+#### Route operator
+
+Route is a special operator that enables conditional fan-out within a
+single pipe declaration:
+
+```yaml
+pipes:
+  - from: inbox-triage
+    route:
+      - when: '.labels | contains(["research"])'
+        to: deep-researcher
+      - when: '.priority == "urgent"'
+        to: notify
+      - otherwise: archive
+```
+
+A message can match multiple routes (all matching branches receive a copy).
+`otherwise` catches messages that match no `when` clause.
+
+Under the hood, route creates one output channel per branch, each wired to
+the destination agent's inbox. The filesystem layout:
+
+```
+$LOOM_HOME/pipes/inbox-triage→[routed]/
+  operators/
+    0-route/
+      config.json
+      inbox/
+      outbox/
+        deep-researcher/    # messages matching research route
+        notify/             # messages matching urgent route
+        archive/            # otherwise
+```
+
+#### Stateful operator recovery
+
+Stateful operators (window, buffer, dedupe, throttle, accumulate) store
+their working state in the `state/` directory:
+
+- **window/buffer**: pending messages are files in `state/pending/`.
+  On supervisor restart, the operator resumes with whatever is in `pending/`.
+  If `timeout` has elapsed, it flushes immediately.
+- **dedupe**: seen keys stored in `state/seen.jsonl` (append-only).
+  GC truncates after a configurable TTL.
+- **throttle**: rate window timestamps in `state/window.json`.
+- **accumulate**: current fold state in `state/current.json`.
+
+Because state is files, recovery after a crash is automatic — the operator
+picks up where it left off by reading its `state/` directory.
+
+#### Origin through pipelines
+
+Operators preserve the `origin` field by default. Stateless operators
+(filter, transform, tap) pass it through unchanged. Stateful operators
+that emit batch messages (window, buffer, accumulate) set `origin` to an
+array of the constituent messages' origins.
+
+#### Future: scriptable operators
+
+The built-in operator set is designed to be replaceable. A future extension
+will allow operators to be external scripts or executables:
+
+```yaml
+through:
+  - script: ./operators/my-custom-op.sh
+    config: { threshold: 42 }
+```
+
+The contract: the script reads `.msg` files from its `inbox/`, writes `.msg`
+files to its `outbox/`, and manages its own `state/`. The pipe engine
+handles wiring and lifecycle. This is not yet implemented.
+
 ## Consequences
 
 ### Good
@@ -322,7 +495,8 @@ loom read researcher --follow | loom send writer --stdin
 tracking log prevents re-delivery after recovery.
 
 **Observable.** The pipe tracking log is an append-only file. `tail -f` it.
-The `loom pipes` command shows live counts without a daemon query.
+The `loom pipes` command shows live counts without a daemon query. Operator state
+is inspectable with `ls`, `cat`, `wc -l` — no special tooling needed.
 
 **No message broker required.** The filesystem is the broker. No Redis, no Kafka,
 no RabbitMQ. Works offline.
@@ -335,6 +509,18 @@ echo '{"priority":"high","type":"finding"}' | jq '.priority == "high"'
 
 **Fan-out is free.** One source agent can feed N destinations with zero extra
 protocol — just N copy operations.
+
+**Operators are files too.** Stateful operators (window, buffer, dedupe, throttle,
+accumulate) store all state as files in their `state/` directory. No hidden
+in-memory state. Crash recovery is automatic — read the directory, resume.
+
+**Pipeline composition without complexity.** The `through` syntax is declarative
+and linear. Each operator has a clear filesystem footprint. Debugging a pipeline
+means inspecting directories in order.
+
+**Extensible by design.** Built-in operators follow the same filesystem contract
+(inbox/outbox/state) that future scriptable operators will use. No separate
+protocol for built-ins vs. plugins.
 
 ### Tricky
 
@@ -358,6 +544,15 @@ fan-in messages should not assume ordering.
 receives the untransformed message. This could be confusing. Mitigation: add
 a `_pipe_transform_failed: true` field to forwarded messages when transform
 fails, so the recipient can detect it.
+
+**Stateful operator state grows.** Dedupe seen-keys, throttle windows, and
+accumulator state can grow over time. Each stateful operator should define a
+GC policy (e.g., dedupe TTL, throttle window rotation). `loom gc` handles this.
+
+**Pipeline debugging.** With multiple operators, a message that doesn't arrive
+at the destination could be stuck at any stage. Mitigation: `loom pipes --verbose`
+shows per-operator counts and the `tap` operator can be inserted at any point
+for live inspection.
 
 ## Alternatives Considered
 
@@ -404,7 +599,4 @@ are lost on reader crash. File-based inbox is durable.
 | 2026-04-02 | **Added origin preservation.** Pipe engine copies `origin` faithfully — runner owns propagation (ADR-009). Origin is always preserved through transforms. |
 | 2026-04-02 | **Added failure reply forwarding.** Pipe engine forwards runner- and supervisor-generated failure replies like any other outbox message. |
 | 2026-04-02 | **Removed `in_reply_to` references.** Failure replies use `origin` path and top-level `error` field instead (ADR-009). |
-
-| Date | Change |
-|---|---|
-| 2026-03-26 | Initial draft. |
+| 2026-04-02 | **Added pipe operators.** Operators (filter, transform, split, route, tap, window, buffer, dedupe, throttle, accumulate) as filesystem-backed directories with inbox/outbox/state. Pipeline composition via `through` key. Built-in first, scriptable later. |
