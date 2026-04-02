@@ -103,7 +103,7 @@ This design lets operators check agent state with `cat` and update it with
   "id": "b7c4e1f2a9d3...",
   "from": "researcher",
   "ts": "2026-03-26T05:01:03.000Z",
-  "in_reply_to": "1742860000000-01JBXYZ9K2.msg",
+  "origin": "1742860000000-01JBXYZ9K2.msg",
   "body": "Unix was created at Bell Labs in 1969...",
   "metadata": {}
 }

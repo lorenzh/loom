@@ -112,10 +112,9 @@ the agent is considered permanently failed and the supervisor stops restarting i
 
 When an agent is declared dead (maxRestarts exhausted), the supervisor also writes
 **failure replies** to the agent's `outbox/` for any messages still in
-`inbox/.in-progress/`. Each failure reply preserves `origin` and `in_reply_to`
-from the orphaned message, with `"error": true` in the body. The pipe engine
-forwards these downstream so fan-in aggregators are not left waiting indefinitely
-(see ADR-009).
+`inbox/.in-progress/`. Each failure reply builds the `origin` path from the
+orphaned message, with `error: true`. The pipe engine forwards these downstream
+so fan-in aggregators are not left waiting indefinitely (see ADR-009).
 
 An operator can resume the agent by writing `status: pending` and sending SIGHUP
 to the supervisor, or by running `loom stop {name}` followed by

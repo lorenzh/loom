@@ -28,7 +28,10 @@ hop). It cannot trace back to the original trigger across multiple hops.
 
 ## Decision
 
-Add an optional `origin` field to the `Message` interface:
+### Replacing `in_reply_to` with `origin`
+
+Remove `in_reply_to` and add `origin` and `error` fields to the `Message`
+interface:
 
 ```typescript
 export interface Message {
@@ -37,11 +40,21 @@ export interface Message {
   from: string;
   ts: number;
   body: string;
-  in_reply_to?: string;
   /** Slash-delimited path of message filenames tracing this pipeline run. */
   origin?: string;
+  /** True when this message signals a processing failure. */
+  error?: boolean;
 }
 ```
+
+`origin` subsumes `in_reply_to`: the **last segment** of the origin path is
+the inbox filename that triggered this reply (`origin.split('/').pop()`).
+This is used for restart recovery (see ADR-005) and provides the full pipeline
+trace as a bonus.
+
+`error` is a **top-level field**, not buried inside `body`. This makes failure
+detection reliable — no double-parsing of the body string, no risk of false
+positives from body content.
 
 ### Propagation rules
 
@@ -59,9 +72,6 @@ engine copies messages faithfully without modifying `origin`.
      ? incoming.origin + "/" + incoming.filename
      : incoming.filename
    ```
-
-3. `in_reply_to` is unchanged — it still tracks the immediate parent filename
-   for restart recovery and single-hop reply threading.
 
 ### What the path tells you
 
@@ -81,15 +91,12 @@ webhook → send() creates "1743567200000-abc123.msg"
 
 new-issue-receiver processes "1743567200000-abc123.msg", writes to outbox:
           origin: "1743567200000-abc123.msg"
-          in_reply_to: "1743567200000-abc123.msg"
 
 duplicate-checker-semantic processes "1743567300000-def456.msg", writes to outbox:
           origin: "1743567200000-abc123.msg/1743567300000-def456.msg"
-          in_reply_to: "1743567300000-def456.msg"
 
 duplicate-aggregator processes "1743567400000-ghi789.msg", writes to outbox:
           origin: "1743567200000-abc123.msg/1743567300000-def456.msg/1743567400000-ghi789.msg"
-          in_reply_to: "1743567400000-ghi789.msg"
 ```
 
 In a fan-out, all 3 checkers receive the same inbox message, so their origin
@@ -120,6 +127,14 @@ An aggregator agent can use `origin` to collect related messages:
 - Read all pending messages from inbox
 - Group by root origin (`.origin | split("/")[0]`)
 - For each complete group (e.g. 3 of 3 checker results), proceed
+- Messages with `error: true` indicate upstream failures — the LLM decides
+  how to handle them (e.g. proceed with partial results)
+
+**Expected count is an application-level concern.** The `origin` field groups
+related messages but does not encode how many to expect. The aggregator's
+system prompt or configuration specifies the expected fan-in degree (e.g.
+"wait for 3 checker results before proceeding"). This is intentional — the
+runtime provides grouping primitives; orchestration logic lives in the agent.
 
 ### Failure signaling through the outbox
 
@@ -127,10 +142,10 @@ When an agent fails to process a message, the failure must be communicated
 downstream through the same channel as success — the outbox. The runner
 handles this:
 
-1. **Graceful failure** — the runner catches the error, moves the message to
-   `inbox/.failed/` (with a companion `.error.json` for local debugging), and
-   writes a **failure reply** to `outbox/` with the correctly built `origin`
-   path and `in_reply_to`, plus `"error": true` in the body.
+1. **Graceful failure** — the runner writes a **failure reply** to `outbox/`
+   first (with `error: true` and the correctly built `origin` path), then
+   moves the message to `inbox/.failed/` with a companion `.error.json` for
+   local debugging. The outbox write is first for crash safety — see ADR-002.
 
 2. **Hard crash** — the supervisor detects the crash and runs recovery. For any
    message stuck in `inbox/.in-progress/` that will not be retried (restart
@@ -144,14 +159,14 @@ directory observation required.
 
 ```
 duplicate-checker-semantic fails processing "1743567300000-def456.msg":
-  1. Runner moves message to inbox/.failed/ (local debug artifact)
-  2. Runner writes to outbox/:
+  1. Runner writes failure reply to outbox/ (crash-safe — written first):
      {
        "origin": "1743567200000-abc123.msg/1743567300000-def456.msg",
-       "in_reply_to": "1743567300000-def456.msg",
-       "body": "{\"error\": true, \"reason\": \"model timeout\"}"
+       "error": true,
+       "body": "model timeout after 30s"
      }
-  3. Pipe engine copies this to duplicate-aggregator/inbox/
+  2. Runner moves message to inbox/.failed/ (local debug artifact)
+  3. Pipe engine copies failure reply to duplicate-aggregator/inbox/
   4. Aggregator groups by root origin, sees 3 of 3 (2 success + 1 error)
 ```
 
@@ -194,6 +209,12 @@ what exists.
 of a top-level field. Works but makes it invisible to the runtime and harder to
 query generically. Rejected — the runtime should know about pipeline identity.
 
+**Keeping `in_reply_to` alongside `origin`:** The last segment of the origin
+path (`origin.split('/').pop()`) is always the inbox filename that triggered
+the reply — exactly what `in_reply_to` was. Keeping both fields would be
+redundant and create two sources of truth for the same relationship. Rejected
+in favour of deriving the parent from `origin`.
+
 ---
 
 ## Changelog
@@ -203,3 +224,5 @@ query generically. Rejected — the runtime should know about pipeline identity.
 | 2026-04-02 | Initial draft. |
 | 2026-04-02 | Replaced `.failed/` observation with outbox-based failure signaling. |
 | 2026-04-02 | Changed `origin` from flat filename to slash-delimited path. Runner owns propagation; pipe engine copies faithfully. |
+| 2026-04-02 | Added `error` as top-level Message field (not in body). Documented expected count as application-level. Outbox reply written before `.failed/` move for crash safety. |
+| 2026-04-02 | Removed `in_reply_to`. `origin` subsumes it — last path segment is the parent message. One field, one source of truth. |

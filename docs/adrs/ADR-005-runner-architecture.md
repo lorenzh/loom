@@ -67,7 +67,7 @@ The runner processes messages through three filesystem phases (see ADR-003):
 1. Pick oldest .msg from inbox/
 2. Move to inbox/.in-progress/        — "I'm working on this"
 3. Call LLM, execute tools
-4. Write response to outbox/          — in_reply_to references inbox filename
+4. Write response to outbox/          — origin path includes inbox filename
 5. Move from .in-progress/ to .processed/  — "Done"
 ```
 
@@ -91,7 +91,7 @@ mid-processing when it last crashed:
 
 ```
 for each file in inbox/.in-progress/:
-  scan outbox/ for any message with in_reply_to == this filename
+  scan outbox/ for any message whose origin ends with this filename
   if found → response already written
     → move from .in-progress/ to .processed/ (finish the ack)
   if not found → processing did not complete
@@ -122,7 +122,7 @@ try a different approach, respond without the tool).
 |---|---|
 | Transient (timeout, rate limit, 5xx) | Retry with exponential backoff (1s, 2s, 4s). Max 3 retries. |
 | Permanent (401 unauthorized, 400 bad request) | Don't retry. |
-| All retries exhausted | Move message to `inbox/.failed/` with companion `.error.json`. Write failure reply to `outbox/` with `"error": true` in body, building `origin` path per ADR-009 and setting `in_reply_to`. Log error. |
+| All retries exhausted | Write failure reply to `outbox/` with `error: true`, building `origin` path per ADR-009 (**first**, for crash safety). Then move message to `inbox/.failed/` with companion `.error.json`. Log error. |
 
 **Tool execution failures:**
 
@@ -167,7 +167,7 @@ scripting, and single-agent use cases.
 supervisor handles lifecycle and routing. Neither depends on the other
 for its core function.
 
-**Idempotent restart.** The `in_reply_to` check ensures no duplicate
+**Idempotent restart.** The `origin` last-segment check ensures no duplicate
 responses after a crash, without requiring transactions or a database.
 
 **Tool execution is transparent.** Plugins are spawned as subprocesses

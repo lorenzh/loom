@@ -58,10 +58,10 @@ transitions. When the runner receives a `message` event, it:
 2. Processes the message (LLM call, tool execution, writes response to `outbox/`)
 3. Calls `acknowledge()` — moves the file to `inbox/.processed/`
 
-Error messages (`"error": true` in the body) are processed through the LLM
-like any other message. The LLM decides how to handle failures — e.g. a
-fan-in aggregator's prompt can instruct it to proceed with partial results
-when it detects error messages in a group (see ADR-009).
+Error messages (`error: true` on the message — a top-level field, see ADR-009)
+are processed through the LLM like any other message. The LLM decides how to
+handle failures — e.g. a fan-in aggregator's prompt can instruct it to proceed
+with partial results when it detects error messages in a group.
 
 This separation keeps `InboxWatcher` simple (detection only) while giving the
 runner control over the claim-process-acknowledge lifecycle.
@@ -73,7 +73,7 @@ mid-processing when it last crashed:
 
 ```
 for each file in inbox/.in-progress/:
-  scan outbox/ for any message with in_reply_to == filename
+  scan outbox/ for any message whose origin ends with this filename
   if found → response already written, just move to .processed/
   if not found → processing did not complete, move back to inbox/ for reprocessing
 ```

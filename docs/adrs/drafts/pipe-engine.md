@@ -264,8 +264,8 @@ The pipe engine forwards failure replies the same as any other outbox message.
 There are two sources of failure replies:
 
 1. **Runner-generated** — when an agent fails to process a message, the runner
-   writes a failure reply to the agent's outbox (with `"error": true` in the
-   body, same `origin` and `in_reply_to` as the original).
+   writes a failure reply to the agent's outbox (with `error: true` and the
+   correctly built `origin` path).
 
 2. **Supervisor-generated** — when an agent hard-crashes and has exhausted its
    restart attempts, the supervisor writes failure replies to the crashed
