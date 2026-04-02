@@ -245,18 +245,15 @@ pipes:
     to: consolidator
 ```
 
-### Origin propagation
+### Origin preservation
 
 When the pipe engine copies a message from one agent's outbox to another's
-inbox, it propagates the `origin` field (see ADR-009). The rules are applied
-automatically by the pipe engine — agents do not need to handle this:
+inbox, it preserves the `origin` field as-is. The pipe engine does **not**
+modify `origin` — that is the runner's responsibility (see ADR-009).
 
-1. If the outbox message has an `origin` field, preserve it as-is.
-2. If the outbox message has no `origin` field (i.e. it is a trigger message),
-   set `origin` to the message's own filename.
-
-This ensures every message in a multi-hop pipeline carries the same `origin`,
-enabling fan-in agents to group related messages.
+The runner builds the `origin` path when writing to outbox by appending the
+inbox message's filename to the existing origin. The pipe engine simply
+copies the message faithfully, including whatever `origin` the runner set.
 
 When a pipe applies a **transform**, the `origin` field is always preserved
 from the original message, even if the jq transform does not include it.

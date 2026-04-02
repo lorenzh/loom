@@ -122,7 +122,7 @@ try a different approach, respond without the tool).
 |---|---|
 | Transient (timeout, rate limit, 5xx) | Retry with exponential backoff (1s, 2s, 4s). Max 3 retries. |
 | Permanent (401 unauthorized, 400 bad request) | Don't retry. |
-| All retries exhausted | Move message to `inbox/.failed/` with companion `.error.json`. Write failure reply to `outbox/` with `"error": true` in body, preserving `origin` and `in_reply_to`. Log error. |
+| All retries exhausted | Move message to `inbox/.failed/` with companion `.error.json`. Write failure reply to `outbox/` with `"error": true` in body, building `origin` path per ADR-009 and setting `in_reply_to`. Log error. |
 
 **Tool execution failures:**
 
@@ -137,16 +137,10 @@ upstream agents (see ADR-009). They arrive via the normal pipe engine flow and
 indicate that an upstream agent failed to process a message in the same pipeline
 run.
 
-The runner handles these without an LLM call:
-
-1. Claim the message (move to `.in-progress/`)
-2. Acknowledge immediately (move to `.processed/`)
-
-No LLM call, no outbox write. The error message has already served its purpose
-by arriving in the inbox — it completes the expected count for fan-in
-aggregation. The agent's LLM prompt can inspect `.processed/` error messages
-if it needs failure context, but the runner does not route them through the
-LLM processing pipeline.
+Error messages are processed through the LLM like any other message. The LLM
+decides how to handle failures — for example, a fan-in aggregator's prompt can
+instruct the LLM to proceed with partial results when error messages are
+present in a group. The runner does not special-case error messages.
 
 ### Runner modes
 
@@ -227,4 +221,4 @@ and tight coupling to the supervisor. Rejected.
 | 2026-04-01 | **Added sequential processing.** The runner uses a drain queue to ensure FIFO, one-at-a-time message processing. Only one LLM call is in flight per agent at any time. |
 | 2026-04-01 | **`sendReply` drops the `from` parameter.** Replies always originate from the agent itself; `from` is derived from `agent` internally. |
 | 2026-04-02 | **Added outbox failure reply on processing failure.** When all retries are exhausted, the runner writes a failure reply to `outbox/` in addition to moving to `.failed/` (ADR-009). |
-| 2026-04-02 | **Added incoming error message handling.** Messages with `"error": true` are acknowledged immediately without LLM processing. They are pipeline failure signals, not content. |
+| 2026-04-02 | **Error messages processed by LLM.** Incoming `"error": true` messages go through normal processing. The LLM decides how to handle failures (e.g. partial fan-in results). |

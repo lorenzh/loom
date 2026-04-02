@@ -55,14 +55,13 @@ The watcher emits events; the **runner** (ADR-005) owns the three-phase
 transitions. When the runner receives a `message` event, it:
 
 1. Calls `claim()` — moves the file to `inbox/.in-progress/`
-2. Reads the message and checks for `"error": true` in the body:
-   - **If error:** acknowledges immediately (moves to `.processed/`). No LLM
-     call, no outbox write. Error messages are pipeline failure signals from
-     upstream agents (see ADR-009) — they complete fan-in group counts but
-     do not require processing.
-   - **If not error:** processes the message (LLM call, tool execution, writes
-     response to `outbox/`), then calls `acknowledge()`.
+2. Processes the message (LLM call, tool execution, writes response to `outbox/`)
 3. Calls `acknowledge()` — moves the file to `inbox/.processed/`
+
+Error messages (`"error": true` in the body) are processed through the LLM
+like any other message. The LLM decides how to handle failures — e.g. a
+fan-in aggregator's prompt can instruct it to proceed with partial results
+when it detects error messages in a group (see ADR-009).
 
 This separation keeps `InboxWatcher` simple (detection only) while giving the
 runner control over the claim-process-acknowledge lifecycle.
@@ -132,4 +131,4 @@ so `ls inbox/` still gives a clean view of pending messages.
 | 2026-03-31 | **Documented `home` parameter convention.** `home` is `$LOOM_HOME/agents`, not `$LOOM_HOME`. |
 | 2026-04-01 | **`InboxWatcher` is now notification-only.** It no longer calls `consume()`. It validates files, emits `(filename)` events, and quarantines invalid files. A `seen` set prevents duplicate emissions. Lifecycle transitions are fully delegated to the consumer. |
 | 2026-04-01 | **Removed `InboxRouter`.** It was never used — ADR-005 runners are self-sufficient and each polls its own inbox directly. There is no central message dispatcher. |
-| 2026-04-02 | **Added error message handling.** Messages with `"error": true` in the body are acknowledged immediately without LLM processing. They are pipeline failure signals (ADR-009), not content. |
+| 2026-04-02 | **Error messages are processed by the LLM.** Messages with `"error": true` go through the normal claim-process-acknowledge flow. The LLM decides how to handle failures (e.g. proceed with partial results in fan-in). See ADR-009. |

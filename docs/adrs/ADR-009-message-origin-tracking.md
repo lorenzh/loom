@@ -38,55 +38,79 @@ export interface Message {
   ts: number;
   body: string;
   in_reply_to?: string;
-  /** Filename of the first message that started this pipeline run. */
+  /** Slash-delimited path of message filenames tracing this pipeline run. */
   origin?: string;
 }
 ```
 
 ### Propagation rules
 
+The **runner** builds the `origin` path when writing to `outbox/`. The pipe
+engine copies messages faithfully without modifying `origin`.
+
 1. **Trigger message** (no incoming message, e.g. a webhook calling `send()`):
-   `origin` is omitted. The message's own filename *is* the origin.
+   `origin` is omitted. The message's own filename *is* the origin root.
 
 2. **Downstream message** (agent processing an incoming message and sending
-   onward): `origin` is set to the incoming message's `origin` if present,
-   otherwise to the incoming message's filename.
+   onward): `origin` is set by appending the incoming message's filename to
+   the incoming message's `origin` (if present), separated by `/`:
+   ```
+   origin = incoming.origin
+     ? incoming.origin + "/" + incoming.filename
+     : incoming.filename
+   ```
 
 3. `in_reply_to` is unchanged — it still tracks the immediate parent filename
    for restart recovery and single-hop reply threading.
+
+### What the path tells you
+
+The first segment is always the **root message** — the trigger that started
+the pipeline. Subsequent segments record each hop. This gives you:
+
+- **Grouping** — `origin.split('/')[0]` extracts the root for fan-in grouping
+- **Full trace** — the complete path shows every message that led here
+- **Agent involvement** — each message file contains a `from` field, so the
+  path implicitly records which agents participated
 
 ### Example flow
 
 ```
 webhook → send() creates "1743567200000-abc123.msg"
-          origin: (absent — this IS the origin)
+          origin: (absent — this IS the origin root)
 
-new-issue-receiver → sends to 3 checkers
+new-issue-receiver processes "1743567200000-abc123.msg", writes to outbox:
           origin: "1743567200000-abc123.msg"
           in_reply_to: "1743567200000-abc123.msg"
 
-duplicate-checker-semantic → sends to aggregator
-          origin: "1743567200000-abc123.msg"
+duplicate-checker-semantic processes "1743567300000-def456.msg", writes to outbox:
+          origin: "1743567200000-abc123.msg/1743567300000-def456.msg"
           in_reply_to: "1743567300000-def456.msg"
 
-duplicate-aggregator → ...
-          origin: "1743567200000-abc123.msg"
+duplicate-aggregator processes "1743567400000-ghi789.msg", writes to outbox:
+          origin: "1743567200000-abc123.msg/1743567300000-def456.msg/1743567400000-ghi789.msg"
           in_reply_to: "1743567400000-ghi789.msg"
 ```
 
-Every message in the pipeline carries the same `origin`, regardless of depth.
+In a fan-out, all 3 checkers receive the same inbox message, so their origin
+paths share the same prefix. The aggregator can group by the root segment
+and distinguish which checker replied via the `from` field.
 
 ### Observability
 
 Standard Unix tools can trace an entire pipeline run:
 
 ```sh
-# Find all messages related to one pipeline run
+# Find all messages related to one pipeline run (root message ID)
 grep -r "1743567200000-abc123" ~/.loom/agents/*/inbox/
 grep -r "1743567200000-abc123" ~/.loom/agents/*/outbox/
 
-# Group aggregator inbox by origin
-jq -s 'group_by(.origin)' ~/.loom/agents/duplicate-aggregator/inbox/*.msg
+# Group aggregator inbox by root origin (first path segment)
+jq -s 'group_by(.origin | split("/")[0])' ~/.loom/agents/duplicate-aggregator/inbox/*.msg
+
+# Trace the full path of a specific message
+jq '.origin' ~/.loom/agents/duplicate-aggregator/outbox/1743567500000-jkl012.msg
+# → "1743567200000-abc123.msg/1743567300000-def456.msg/1743567400000-ghi789.msg"
 ```
 
 ### Fan-in / merge semantics
@@ -94,7 +118,7 @@ jq -s 'group_by(.origin)' ~/.loom/agents/duplicate-aggregator/inbox/*.msg
 An aggregator agent can use `origin` to collect related messages:
 
 - Read all pending messages from inbox
-- Group by `.origin`
+- Group by root origin (`.origin | split("/")[0]`)
 - For each complete group (e.g. 3 of 3 checker results), proceed
 
 ### Failure signaling through the outbox
@@ -105,8 +129,8 @@ handles this:
 
 1. **Graceful failure** — the runner catches the error, moves the message to
    `inbox/.failed/` (with a companion `.error.json` for local debugging), and
-   writes a **failure reply** to `outbox/` with the same `origin` and
-   `in_reply_to`, plus `"error": true` in the body.
+   writes a **failure reply** to `outbox/` with the correctly built `origin`
+   path and `in_reply_to`, plus `"error": true` in the body.
 
 2. **Hard crash** — the supervisor detects the crash and runs recovery. For any
    message stuck in `inbox/.in-progress/` that will not be retried (restart
@@ -119,16 +143,16 @@ failures — and can decide how to proceed. No timeouts and no cross-agent
 directory observation required.
 
 ```
-duplicate-checker-semantic fails processing issue A:
+duplicate-checker-semantic fails processing "1743567300000-def456.msg":
   1. Runner moves message to inbox/.failed/ (local debug artifact)
   2. Runner writes to outbox/:
      {
-       "origin": "1743567200000-abc123.msg",
+       "origin": "1743567200000-abc123.msg/1743567300000-def456.msg",
        "in_reply_to": "1743567300000-def456.msg",
        "body": "{\"error\": true, \"reason\": \"model timeout\"}"
      }
   3. Pipe engine copies this to duplicate-aggregator/inbox/
-  4. Aggregator groups by origin, sees 3 of 3 (2 success + 1 error)
+  4. Aggregator groups by root origin, sees 3 of 3 (2 success + 1 error)
 ```
 
 **Key principle:** `.failed/` is a local debug artifact (visible via `ls`,
@@ -140,14 +164,19 @@ communication channel — for both success and failure.
 **Good:**
 - Multi-agent pipelines become traceable end-to-end with `grep`
 - Fan-in agents can correctly group concurrent pipeline runs
+- Path-based origin shows which agents were involved at each hop
 - No new runtime dependencies — `origin` is just a string field
 - Backward compatible — `origin` is optional, existing messages still valid
 - `isMessage()` validation only needs a minor addition for the new field
+- The runner owns origin propagation — the pipe engine copies faithfully
 
 **Bad:**
-- Agents (or pipe routing logic) must remember to propagate `origin` — if an
-  agent forgets, downstream correlation breaks. This should be handled by the
-  pipe engine (see pipe-engine ADR), not left to individual agent prompts.
+- The runner must build the `origin` path when writing to outbox. If a
+  custom runner forgets, downstream tracing breaks. Mitigated: the standard
+  `AgentRunner` handles this automatically.
+- Origin paths grow with each hop (~40 chars per segment). For pipelines
+  of 3-5 hops this is negligible. Deeply nested pipelines (10+ hops) may
+  want to consider truncation.
 
 ## Alternatives considered
 
@@ -173,3 +202,4 @@ query generically. Rejected — the runtime should know about pipeline identity.
 |---|---|
 | 2026-04-02 | Initial draft. |
 | 2026-04-02 | Replaced `.failed/` observation with outbox-based failure signaling. |
+| 2026-04-02 | Changed `origin` from flat filename to slash-delimited path. Runner owns propagation; pipe engine copies faithfully. |
