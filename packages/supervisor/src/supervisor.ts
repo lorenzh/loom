@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { RestartPolicy } from "./restart";
 
@@ -46,10 +46,10 @@ export class Supervisor {
   }
 
   /** Start the supervisor and begin scanning for agents. */
-  start(): void {
+  async start(): Promise<void> {
     if (this.running) return;
 
-    const existingPid = Supervisor.readPid(this.loomHome);
+    const existingPid = await Supervisor.readPid(this.loomHome);
     if (existingPid !== null) {
       if (Supervisor.isAlive(existingPid)) {
         throw new SupervisorAlreadyRunningError(existingPid, this.loomHome);
@@ -59,7 +59,7 @@ export class Supervisor {
 
     this.running = true;
 
-    writeFileSync(join(this.loomHome, "supervisor.pid"), `${process.pid}\n`, "utf8");
+    await Bun.write(join(this.loomHome, "supervisor.pid"), `${process.pid}\n`);
 
     this.scan();
     this.scanTimer = setInterval(() => this.scan(), this.scanIntervalMs);
@@ -71,7 +71,7 @@ export class Supervisor {
   }
 
   /** Stop the supervisor and all managed agents. */
-  stop(): void {
+  async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
 
@@ -94,9 +94,9 @@ export class Supervisor {
     }
     this.agents.clear();
 
-    const pidPath = join(this.loomHome, "supervisor.pid");
-    if (existsSync(pidPath)) {
-      unlinkSync(pidPath);
+    const filePid = await Supervisor.readPid(this.loomHome);
+    if (filePid === process.pid) {
+      unlinkSync(join(this.loomHome, "supervisor.pid"));
     }
   }
 
@@ -107,10 +107,10 @@ export class Supervisor {
   }
 
   /** Read the supervisor PID from the filesystem, or null if not running. */
-  static readPid(loomHome: string): number | null {
-    const pidPath = join(loomHome, "supervisor.pid");
-    if (!existsSync(pidPath)) return null;
-    const raw = readFileSync(pidPath, "utf8").trim();
+  static async readPid(loomHome: string): Promise<number | null> {
+    const file = Bun.file(join(loomHome, "supervisor.pid"));
+    if (!(await file.exists())) return null;
+    const raw = (await file.text()).trim();
     const pid = Number.parseInt(raw, 10);
     return Number.isNaN(pid) ? null : pid;
   }
