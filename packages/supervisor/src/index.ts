@@ -1,2 +1,2 @@
 export type { CrashRecord, RestartPolicy } from "./restart";
-export { Supervisor, type SupervisorOptions } from "./supervisor";
+export { Supervisor, SupervisorAlreadyRunningError, type SupervisorOptions } from "./supervisor";

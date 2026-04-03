@@ -1,6 +1,14 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { RestartPolicy } from "./restart";
+
+/** Error thrown when another supervisor is already running for this $LOOM_HOME. */
+export class SupervisorAlreadyRunningError extends Error {
+  constructor(pid: number, loomHome: string) {
+    super(`Supervisor already running (pid ${pid}) for ${loomHome}`);
+    this.name = "SupervisorAlreadyRunningError";
+  }
+}
 
 export interface SupervisorOptions {
   /** Root directory for loom state ($LOOM_HOME). */
@@ -29,6 +37,8 @@ export class Supervisor {
   private agents = new Map<string, ManagedAgent>();
   private scanTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private sighupHandler: (() => void) | null = null;
+  private sigtermHandler: (() => void) | null = null;
 
   constructor(opts: SupervisorOptions) {
     this.loomHome = opts.loomHome;
@@ -36,21 +46,32 @@ export class Supervisor {
   }
 
   /** Start the supervisor and begin scanning for agents. */
-  start(): void {
+  async start(): Promise<void> {
     if (this.running) return;
+
+    const existingPid = await Supervisor.readPid(this.loomHome);
+    if (existingPid !== null) {
+      if (Supervisor.isAlive(existingPid)) {
+        throw new SupervisorAlreadyRunningError(existingPid, this.loomHome);
+      }
+      unlinkSync(join(this.loomHome, "supervisor.pid"));
+    }
+
     this.running = true;
 
-    const pidPath = join(this.loomHome, "supervisor.pid");
-    writeFileSync(pidPath, `${process.pid}\n`, "utf8");
+    await Bun.write(join(this.loomHome, "supervisor.pid"), `${process.pid}\n`);
 
     this.scan();
     this.scanTimer = setInterval(() => this.scan(), this.scanIntervalMs);
 
-    process.on("SIGHUP", () => this.scan());
+    this.sighupHandler = () => this.scan();
+    this.sigtermHandler = () => this.stop();
+    process.on("SIGHUP", this.sighupHandler);
+    process.on("SIGTERM", this.sigtermHandler);
   }
 
   /** Stop the supervisor and all managed agents. */
-  stop(): void {
+  async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
 
@@ -59,15 +80,23 @@ export class Supervisor {
       this.scanTimer = null;
     }
 
+    if (this.sighupHandler) {
+      process.removeListener("SIGHUP", this.sighupHandler);
+      this.sighupHandler = null;
+    }
+    if (this.sigtermHandler) {
+      process.removeListener("SIGTERM", this.sigtermHandler);
+      this.sigtermHandler = null;
+    }
+
     for (const agent of this.agents.values()) {
       agent.process?.kill();
     }
     this.agents.clear();
 
-    const pidPath = join(this.loomHome, "supervisor.pid");
-    if (existsSync(pidPath)) {
-      const { unlinkSync } = require("node:fs");
-      unlinkSync(pidPath);
+    const filePid = await Supervisor.readPid(this.loomHome);
+    if (filePid === process.pid) {
+      unlinkSync(join(this.loomHome, "supervisor.pid"));
     }
   }
 
@@ -78,11 +107,24 @@ export class Supervisor {
   }
 
   /** Read the supervisor PID from the filesystem, or null if not running. */
-  static readPid(loomHome: string): number | null {
-    const pidPath = join(loomHome, "supervisor.pid");
-    if (!existsSync(pidPath)) return null;
-    const raw = readFileSync(pidPath, "utf8").trim();
+  static async readPid(loomHome: string): Promise<number | null> {
+    const file = Bun.file(join(loomHome, "supervisor.pid"));
+    if (!(await file.exists())) return null;
+    const raw = (await file.text()).trim();
     const pid = Number.parseInt(raw, 10);
     return Number.isNaN(pid) ? null : pid;
+  }
+
+  /** Check whether a process with the given PID is alive. */
+  static isAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (e: unknown) {
+      if (e instanceof Error && "code" in e && (e as NodeJS.ErrnoException).code === "EPERM") {
+        return true;
+      }
+      return false;
+    }
   }
 }
