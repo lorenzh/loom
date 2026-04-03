@@ -57,15 +57,17 @@ in `loom.yml` and wires the pipe engine for inter-agent communication.
 
 ### Foreground vs detached
 
-| Mode | Supervisor? | Restart on crash? | Pipe engine? |
+| Mode | Supervisor? | Restart on crash? | Message routing? |
 |---|---|---|---|
 | `loom run` (foreground) | No | No | No |
 | `loom run --detach` | Yes | Yes | Yes |
 | `loom up` | Yes | Yes | Yes |
 
-The pipe engine runs inside the supervisor. Since `--detach` starts (or reuses)
-a supervisor, pipes are available for detached agents. Multiple detached agents
-sharing the same supervisor can pipe to each other.
+The supervisor handles message routing — moving messages between agent outboxes,
+pipe inboxes/outboxes, and agent inboxes (see pipe-engine ADR). Since `--detach`
+starts (or reuses) a supervisor, pipes and routes are available for detached
+agents. Multiple detached agents sharing the same supervisor can route messages
+to each other.
 
 ### Detach starts a supervisor on-demand
 
@@ -156,10 +158,10 @@ crashes, it stays dead. This is intentional — foreground mode is for
 development and scripting, not production. The operator sees the crash
 immediately in their terminal.
 
-**No pipe engine in foreground mode.** A foreground `loom run` agent (no
-`--detach`) has no supervisor and therefore no pipe engine. It cannot
-receive piped messages from other agents' outboxes. For one-off piping
-in foreground mode, operators can use shell tools:
+**No message routing in foreground mode.** A foreground `loom run` agent (no
+`--detach`) has no supervisor and therefore no message routing. It cannot
+receive routed messages from other agents' outboxes or through pipes. For
+one-off piping in foreground mode, operators can use shell tools:
 `loom read researcher --follow | loom send writer --stdin`.
 
 ## Alternatives considered
@@ -193,3 +195,4 @@ be a command, not a function call.
 |---|---|
 | 2026-03-30 | Initial decision. |
 | 2026-03-31 | **Audited against codebase.** No design contradictions found. All commands are forward-looking design specifications. |
+| 2026-04-03 | **Updated pipe engine references.** Replaced "pipe engine" with "message routing" to reflect that the supervisor is a router and pipes are independent named entities (see pipe-engine ADR). |

@@ -32,6 +32,20 @@ version: 1
 # Default: ~/.loom
 home: ~/.loom
 
+# Named pipes — reusable message processors (see pipe-engine ADR)
+pipes:
+  finding-filter:                    # unique name, slug (a-z0-9-)
+    through:
+      - filter: '.type == "finding"'
+      - dedupe: '.id'
+      - window: { size: 5, timeout: 30s }
+      - transform: '{ findings: [.[].result], count: length }'
+
+  urgency-gate:
+    through:
+      - filter: '.priority == "urgent"'
+      - throttle: { max: 10, per: 60s }
+
 agents:
   - name: string                    # required, unique, slug (a-z0-9-)
     model: string                   # required, see model routing ADR
@@ -49,10 +63,11 @@ agents:
         message: "scan"            # message body to send when trigger fires
       - webhook: "/hooks/my-agent" # HTTP POST endpoint (future)
 
-    # Pipes: automatically forward messages from another agent's outbox
-    pipes:
-      - from: other-agent          # pipe other-agent's outbox → this inbox
-        filter: "[URGENT]"         # optional: only forward if body contains
+    # Message inputs: where this agent receives messages from
+    from:
+      - source: other-agent          # direct: other-agent outbox → this inbox
+      - pipe: finding-filter         # through a pipe: source outbox → pipe → this inbox
+        source: researcher
 
     # Memory: pre-seeded key-value pairs
     memory:
@@ -61,20 +76,62 @@ agents:
         https://lobste.rs
 ```
 
+Pipes are named, reusable message processors defined at the top level.
+Agents declare their inputs via `from`, which supports three wiring patterns:
+
+```yaml
+# Direct: agent → agent (no pipe)
+from:
+  - source: researcher
+
+# Through a pipe: agent → pipe → agent
+from:
+  - pipe: finding-filter
+    source: researcher
+
+# Chained pipes: agent → pipe → pipe → agent
+from:
+  - pipe: batch-findings
+    source: high-priority    # high-priority is a pipe, not an agent
+```
+
+Pipes can also declare their own `from` for pipe-to-pipe wiring:
+
+```yaml
+pipes:
+  classify:
+    through:
+      - transform: '. + { category: ... }'
+
+  high-priority:
+    from:
+      - pipe: classify
+        source: researcher
+    through:
+      - filter: '.category == "high"'
+```
+
+See the pipe-engine ADR for full details on pipe operators, routing,
+and the filesystem layout.
+
 ### Validation rules
 
 - `name` must be unique within the weave
 - `name` must match `[a-z][a-z0-9-]*` (no spaces, no uppercase)
 - `model` must be non-empty; validation against available providers is done at spawn
   time, not at parse time (providers may be offline during parse)
-- Circular pipes are detected at `loom up` time using *DFS with three-colour marking*
+- Circular routes are detected at `loom up` time using *DFS with three-colour marking*
   (unvisited → in-progress → done). This catches all cycles including indirect ones
-  (A→B→C→A). The full cycle path is reported in the error:
+  through both agents and pipes (A→pipe→B→pipe→A). The full cycle path is reported:
   ```
-  Error: circular pipe detected: news-monitor → inbox-triage → deep-researcher → news-monitor
+  Error: circular route detected: researcher → classify → high-priority → researcher
   ```
-  Implementation: `packages/runtime/src/pipe-validator.ts` — `detectCycles(agents)`
-- `filter` is a substring match (not regex) for v1. Regex support in a later release.
+  Implementation: `packages/runtime/src/pipe-validator.ts` — `detectCycles(agents, pipes)`
+- Pipe names must be unique within the weave and must match `[a-z][a-z0-9-]*`
+- Pipe names and agent names share the same namespace — a pipe cannot have the
+  same name as an agent
+- `from` entries must reference existing agents or pipes; unknown names are
+  rejected at parse time
 
 ### Resolution order
 
@@ -118,7 +175,8 @@ No built-in concept of "environments" — that is shell's job.
 - Weave config is a single file, version-controlled, reviewable as a diff
 - `loom up` is idempotent — safe to run repeatedly in CI or on boot
 - Shell variable expansion keeps secrets out of the config file
-- Pipes and triggers are declared, not wired imperatively — easier to audit
+- Pipes are named and reusable — define once, wire into multiple connections
+- Routes and triggers are declared, not wired imperatively — easier to audit
 
 **Bad:**
 - Dynamic weaves (agents that spawn other agents at runtime) can't be fully expressed
@@ -153,3 +211,4 @@ to evaluate. Makes config opaque to non-JS tools. Rejected for v1; may be added 
 | Date | Change |
 |---|---|
 | 2026-03-25 | Initial draft. |
+| 2026-04-03 | **Replaced `pipes` on agents with `from` + top-level named pipes.** Pipes are now named, reusable entities defined at the top level. Agents declare inputs via `from` with `source` and optional `pipe`. Pipe-to-pipe wiring supported. Shared namespace for agent and pipe names. Updated validation rules. |

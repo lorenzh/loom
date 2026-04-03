@@ -23,13 +23,21 @@ loom needs a supervisor that:
 
 ### Supervisor process
 
-The supervisor is a **process manager only** — it spawns runners, detects crashes,
-restarts with backoff, and runs the pipe engine (ADR pipe-engine). It does NOT
-mediate messages between agents; runners are self-sufficient (see ADR-005).
+The supervisor is a **process manager and message router** — it spawns runners,
+detects crashes, restarts with backoff, and routes messages between agents and
+pipes. It does NOT mediate message processing; runners are self-sufficient
+(see ADR-005), and pipes are independent filesystem-backed entities
+(see pipe-engine ADR).
+
+As a **message router**, the supervisor watches outbox directories (of both
+agents and pipes) and copies new `.msg` files to the appropriate inbox
+directories according to a routes table derived from `loom.yml`. Pipes are
+named, reusable entities with their own directories — the supervisor moves
+files into and out of them but does not contain pipe logic.
 
 The supervisor is itself an OS process with a PID written to `$LOOM_HOME/supervisor.pid`.
 If the supervisor dies, runners continue running — they keep polling their inboxes and
-processing messages. They just lose restart protection and the pipe engine.
+processing messages. They just lose restart protection and message routing.
 
 ### Supervisor lifecycle
 
@@ -208,7 +216,7 @@ A systemd unit file template will be provided in `docs/examples/loom-supervisor.
 
 **Bad:**
 - The supervisor is itself a single point of failure. If it dies, agents keep running
-  but lose restart protection and pipe forwarding. Mitigated by running the supervisor
+  but lose restart protection and message routing. Mitigated by running the supervisor
   under systemd (which will restart it).
 - Crash files accumulate. A future `loom gc` command should compact old crash records.
 
@@ -242,3 +250,4 @@ runners (ADR-005) are simpler and more resilient.
 | 2026-03-31 | **Removed `loom restart` command reference.** ADR-006 does not define a `loom restart` command. Replaced with the equivalent operator workflow: write `status: pending` + SIGHUP, or stop + re-run detached. |
 | 2026-03-31 | **Fixed systemd unit file reference.** Changed "is provided" to "will be provided" — the file does not exist yet. |
 | 2026-04-02 | **Added failure reply on agent death.** When maxRestarts is exhausted, the supervisor writes failure replies to the agent's outbox for orphaned `.in-progress/` messages (ADR-009). |
+| 2026-04-03 | **Supervisor role clarified as message router.** Supervisor routes messages between agents and pipes via a routes table. Pipe logic is separate — pipes are named filesystem-backed entities (see pipe-engine ADR). |
