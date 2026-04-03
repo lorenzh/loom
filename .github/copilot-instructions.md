@@ -54,11 +54,11 @@ Messages are JSON files named `{timestamp_ms}-{id}.msg`. Three-phase lifecycle:
 2. **Claimed** — `claim()` atomically moves file to `inbox/.in-progress/`
 3. **Done** — `acknowledge()` moves to `inbox/.processed/`; or `fail()` moves to `inbox/.failed/` with a companion `.error.json`
 
-`recover(inboxDir, outboxDir)` handles crash recovery: re-queues in-progress messages unless the outbox already has a reply with a matching `in_reply_to`.
+`recover(inboxDir, outboxDir)` handles crash recovery: re-queues in-progress messages unless the outbox already has a reply whose `origin` path's last segment matches the in-progress filename.
 
 ### `AgentRunner` message loop
 
-Processes messages strictly FIFO, one at a time. Claims a message, calls the LLM via `resolveProvider()`, writes a reply to `outbox/` via `sendReply()` (sets `in_reply_to` for crash recovery), then acknowledges.
+Processes messages strictly FIFO, one at a time. Claims a message, calls the LLM via `resolveProvider()`, writes a reply to `outbox/` via `sendReply()` (builds `origin` path for pipeline tracing and crash recovery), then acknowledges.
 
 ### Model string format
 

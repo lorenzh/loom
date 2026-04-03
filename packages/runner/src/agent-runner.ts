@@ -80,7 +80,8 @@ export class AgentRunner {
       { role: "user", content: message.body },
     ]);
 
-    await sendReply(this.home, this.agentName, response.text, filename);
+    const origin = message.origin ? `${message.origin}/${filename}` : filename;
+    await sendReply(this.home, this.agentName, response.text, origin);
     await acknowledge(this.inboxDir, filename);
     this.agent.status = "idle";
   }

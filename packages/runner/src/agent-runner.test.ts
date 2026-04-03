@@ -66,7 +66,7 @@ test("processes a message end-to-end and writes outbox reply", async () => {
   expect(reply.from).toBe(AGENT);
 });
 
-test("reply includes in_reply_to referencing the inbox filename", async () => {
+test("reply includes origin referencing the inbox filename", async () => {
   new AgentProcess(home, AGENT);
 
   const inboxMsg = await send(home, AGENT, "user", "ping");
@@ -80,7 +80,7 @@ test("reply includes in_reply_to referencing the inbox filename", async () => {
   await runPromise;
 
   const reply = await read(outboxDir, outboxFiles[0]!);
-  expect(reply.in_reply_to).toContain(inboxMsg.id);
+  expect(reply.origin).toContain(inboxMsg.id);
 });
 
 test("message moves from inbox to .processed after handling", async () => {
@@ -226,7 +226,7 @@ test("recover: skips already-replied in-progress message, no duplicate LLM call"
   const outboxFiles = await list(join(home, AGENT, "outbox"));
   expect(outboxFiles).toHaveLength(1);
   const reply = await read(join(home, AGENT, "outbox"), outboxFiles[0]!);
-  expect(reply.in_reply_to).toContain(inboxMsg.id);
+  expect(reply.origin).toContain(inboxMsg.id);
   expect(await list(inboxDir)).toHaveLength(0);
 });
 

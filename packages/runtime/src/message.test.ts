@@ -173,34 +173,75 @@ test("consume reads and moves message to .processed", async () => {
 
 // --- sendReply ---
 
-test("sendReply writes outbox message with in_reply_to", async () => {
+test("sendReply writes outbox message with origin", async () => {
   const outboxDir = join(root, AGENT, "outbox");
   mkdirSync(outboxDir, { recursive: true });
 
   const msg = await sendReply(root, AGENT, "reply body", "1234-abcd.msg");
 
-  expect(msg.in_reply_to).toBe("1234-abcd.msg");
+  expect(msg.origin).toBe("1234-abcd.msg");
   expect(msg.from).toBe(AGENT);
   expect(msg.body).toBe("reply body");
 
   const files = await list(outboxDir);
   expect(files).toHaveLength(1);
   const raw = await Bun.file(join(outboxDir, files[0] as string)).json();
-  expect(raw.in_reply_to).toBe("1234-abcd.msg");
+  expect(raw.origin).toBe("1234-abcd.msg");
 });
 
-// --- isMessage with in_reply_to ---
+test("sendReply writes outbox message with error flag", async () => {
+  const outboxDir = join(root, AGENT, "outbox");
+  mkdirSync(outboxDir, { recursive: true });
 
-test("isMessage accepts message with in_reply_to", () => {
+  const msg = await sendReply(root, AGENT, "timeout", "1234-abcd.msg", true);
+
+  expect(msg.origin).toBe("1234-abcd.msg");
+  expect(msg.error).toBe(true);
+
+  const files = await list(outboxDir);
+  const raw = await Bun.file(join(outboxDir, files[0] as string)).json();
+  expect(raw.error).toBe(true);
+});
+
+// --- isMessage with origin and error ---
+
+test("isMessage accepts message with origin", () => {
   expect(
-    isMessage({ v: 1, id: "abc", from: "sender", ts: 123, body: "hello", in_reply_to: "msg.msg" }),
+    isMessage({
+      v: 1,
+      id: "abc",
+      from: "sender",
+      ts: 123,
+      body: "hello",
+      origin: "1234-abcd.msg",
+    }),
   ).toBe(true);
 });
 
-test("isMessage rejects message with non-string in_reply_to", () => {
+test("isMessage accepts message with origin and error", () => {
   expect(
-    isMessage({ v: 1, id: "abc", from: "sender", ts: 123, body: "hello", in_reply_to: 42 }),
-  ).toBe(false);
+    isMessage({
+      v: 1,
+      id: "abc",
+      from: "sender",
+      ts: 123,
+      body: "fail",
+      origin: "1234-abcd.msg",
+      error: true,
+    }),
+  ).toBe(true);
+});
+
+test("isMessage rejects message with non-string origin", () => {
+  expect(isMessage({ v: 1, id: "abc", from: "sender", ts: 123, body: "hello", origin: 42 })).toBe(
+    false,
+  );
+});
+
+test("isMessage rejects message with non-boolean error", () => {
+  expect(isMessage({ v: 1, id: "abc", from: "sender", ts: 123, body: "hello", error: "yes" })).toBe(
+    false,
+  );
 });
 
 // --- fail ---
@@ -257,7 +298,7 @@ test("recover is a no-op when .in-progress is empty", async () => {
   await recover(inboxDir, outboxDir); // should not throw
 });
 
-test("recover acknowledges an in-progress message whose reply is already in outbox", async () => {
+test("recover acknowledges an in-progress message whose reply origin ends with its filename", async () => {
   const inboxDir = join(root, AGENT, "inbox");
   const outboxDir = join(root, AGENT, "outbox");
   mkdirSync(outboxDir, { recursive: true });
