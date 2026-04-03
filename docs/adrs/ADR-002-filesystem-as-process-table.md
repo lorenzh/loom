@@ -45,11 +45,11 @@ Message files in `inbox/` and `outbox/` follow this naming convention:
 The timestamp prefix provides human-readable "when" context in directory listings.
 The `id` segment is a unique identifier for deduplication and sort-order stability.
 
-> **Note:** The current runtime generates `id` as a 16-character truncated hex UUID
-> (`crypto.randomUUID().slice(0, 16)`). A future migration will switch to
-> [ULID](https://github.com/ulid/spec) (Crockford Base32) for lexicographic
-> sortability within the same millisecond. Until then, ordering relies on the
-> timestamp prefix and the existing hex IDs are sufficient for uniqueness.
+> **Note:** The `id` segment uses [ULID](https://github.com/ulid/spec)
+> (Crockford Base32), which provides lexicographic sortability within the
+> same millisecond. The current runtime implementation may still use a
+> 16-character truncated hex UUID (`crypto.randomUUID().slice(0, 16)`) —
+> both formats are valid and uniqueness is guaranteed either way.
 
 ### Message file format
 
@@ -105,7 +105,7 @@ If a message is valid but processing fails after all retries (e.g. LLM timeout,
 repeated API errors), the runner:
 1. Writes a **failure reply** to `outbox/` with `error: true`, building the
    `origin` path from the original message (see ADR-009). This signals
-   downstream agents (e.g. fan-in aggregators) through the normal pipe engine
+   downstream agents (e.g. fan-in aggregators) through the normal pipe runner
    flow. **This step is first** so the downstream signal is preserved even if
    the runner crashes before completing the remaining steps.
 2. Moves the message to `inbox/.failed/{original_filename}`
@@ -165,8 +165,5 @@ mv agents/researcher/inbox/.failed/1742860000000-a3f9c1d2e5b87041.msg agents/res
 | Date | Change |
 |---|---|
 | 2026-03-25 | Initial decision. |
-| 2026-03-31 | **Added `pending` to status values.** ADR-004 and ADR-006 require writing `status: pending` for newly created detached agents. Added to the canonical set. |
-| 2026-03-31 | **Fixed `v` field backwards-compat rule.** Changed "missing `v` → treated as `v: 1`" to "missing `v` → fails validation, message is quarantined." The `v` field is required for all messages. |
-| 2026-04-02 | **Added outbox failure reply to failed message handling.** The runner now writes a failure reply to `outbox/` in addition to moving to `.failed/`. `.failed/` is a local debug artifact; the outbox reply is the inter-agent signal. |
-| 2026-04-02 | **Outbox reply written before `.failed/` move.** Reordered to write the downstream signal first for crash safety. If the runner crashes after the outbox write but before moving to `.failed/`, restart recovery handles it. |
-| 2026-04-02 | **Replaced `in_reply_to` with `origin` in message format.** `origin` is a path-based field that subsumes `in_reply_to` — last segment is the parent message. See ADR-009. |
+| 2026-03-31 | **Schema corrections.** Added `pending` to status values. Fixed `v` field rule: missing `v` now fails validation (quarantined), not treated as `v: 1`. |
+| 2026-04-02 | **Failure signaling and origin tracking.** Added outbox failure reply (crash-safe: written before `.failed/` move). Replaced `in_reply_to` with `origin` — a slash-delimited path tracing the full pipeline run (ADR-009). |

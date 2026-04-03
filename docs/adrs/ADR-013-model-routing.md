@@ -1,7 +1,7 @@
-# Model routing and provider abstraction
+# ADR-013: Model routing and provider abstraction
 
-**Status:** Draft
-**Date:** 2026-03-25
+**Status:** Accepted
+**Date:** 2026-04-03
 
 ## Context
 
@@ -110,6 +110,25 @@ interface Provider {
 interface ChatMessage {
   role: 'user' | 'assistant' | 'tool'
   content: string | ContentPart[]
+  /** Tool call results include the tool_use id they respond to. */
+  tool_use_id?: string
+}
+
+/** Multi-modal content for vision and structured tool results. */
+type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+  | { type: 'tool_use'; id: string; name: string; input: unknown }
+  | { type: 'tool_result'; tool_use_id: string; content: string }
+
+/** Tool definitions passed to the LLM for function calling. */
+interface ToolDefinition {
+  /** Tool name — must match `[a-z_][a-z0-9_]*`. */
+  name: string
+  /** One-line description shown to the LLM. */
+  description: string
+  /** JSON Schema describing the tool's input parameters. */
+  input_schema: Record<string, unknown>
 }
 
 interface ChatChunk {
@@ -122,6 +141,10 @@ interface ChatChunk {
 
 Streaming is the default. Providers that don't support streaming can emit a single
 `text` chunk followed by `done`.
+
+Each provider normalises its native format into `ChatMessage`/`ChatChunk` internally.
+Provider-specific features (e.g. Anthropic's native `tool_use` blocks, OpenAI's
+`function_calling`) are mapped to these common types by the provider adapter.
 
 ### Environment variables
 
@@ -222,5 +245,5 @@ common case of one provider per agent. Rejected in favour of prefix-in-model-str
 | Date | Change |
 |---|---|
 | 2026-03-25 | Initial draft. |
-| 2026-04-01 | **Added provider implementation section.** All providers use plain `fetch()` — no SDKs, no external dependencies. Ollama uses its native `/api/chat` endpoint; Anthropic calls `/v1/messages` directly. OpenAI-compatible escape hatch documented via `OPENAI_BASE_URL`. |
-| 2026-04-01 | **Added Ollama multi-model thrashing note.** Documented model-swap latency on single-GPU setups and recommended using one shared model for homelab deployments. Added deployment pattern table covering single-GPU, multi-GPU, mixed local+cloud, and cloud-only setups. |
+| 2026-04-01 | **Provider implementation details.** All providers use plain `fetch()` — no SDKs. Ollama native `/api/chat`, Anthropic `/v1/messages`, OpenAI-compatible escape hatch. Added Ollama multi-model thrashing guidance and deployment pattern table. |
+| 2026-04-03 | **Defined missing types.** Added `ContentPart` (text, image, tool_use, tool_result), `ToolDefinition` (name, description, input_schema), and `tool_use_id` on `ChatMessage`. Noted that providers normalise native formats into these common types. |

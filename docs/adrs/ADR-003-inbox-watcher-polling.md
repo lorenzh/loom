@@ -109,8 +109,8 @@ so `ls inbox/` still gives a clean view of pending messages.
 
 - Message delivery latency: up to `pollIntervalMs` (default 200 ms). Acceptable
   for conversational agents. For tighter latency, callers can set `pollIntervalMs: 50`.
-- At high message volume, many small files accumulate in `.processed/`. A future
-  compaction pass can archive these to NDJSON logs.
+- At high message volume, many small files accumulate in `.processed/`.
+  `loom gc` archives these to compressed NDJSON (see ADR-007).
 - `InboxWatcher` extends `EventEmitter`, emits `(filename)` — filename only, no
   parsed message. The consumer calls `claim()` to read and take ownership.
   Invalid files are quarantined to `.unreadable/` and surfaced via the `'error'` event.
@@ -127,9 +127,5 @@ so `ls inbox/` still gives a clean view of pending messages.
 | Date | Change |
 |---|---|
 | 2026-03-25 | Initial decision. |
-| 2026-03-31 | **Removed "not yet implemented" note.** The three-phase lifecycle (claim → process → acknowledge) is the decided design, not a future target. |
-| 2026-03-31 | **Clarified watcher vs runner responsibility.** `InboxWatcher` detects and emits; the runner owns the claim/process/acknowledge transitions. Updated pseudocode to reflect this separation. |
-| 2026-03-31 | **Documented `home` parameter convention.** `home` is `$LOOM_HOME/agents`, not `$LOOM_HOME`. |
-| 2026-04-01 | **`InboxWatcher` is now notification-only.** It no longer calls `consume()`. It validates files, emits `(filename)` events, and quarantines invalid files. A `seen` set prevents duplicate emissions. Lifecycle transitions are fully delegated to the consumer. |
-| 2026-04-01 | **Removed `InboxRouter`.** It was never used — ADR-005 runners are self-sufficient and each polls its own inbox directly. There is no central message dispatcher. |
+| 2026-04-01 | **Simplified to notification-only watcher.** `InboxWatcher` no longer calls `consume()` or routes messages — it validates, emits `(filename)` events, and quarantines invalid files. Removed `InboxRouter` (never used). All lifecycle transitions delegated to the runner (ADR-005). Documented `home` parameter convention. |
 | 2026-04-02 | **Error messages are processed by the LLM.** Messages with `"error": true` go through the normal claim-process-acknowledge flow. The LLM decides how to handle failures (e.g. proceed with partial results in fan-in). See ADR-009. |

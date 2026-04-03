@@ -27,7 +27,7 @@ The supervisor is a **process manager and message router** — it spawns runners
 detects crashes, restarts with backoff, and routes messages between agents and
 pipes. It does NOT mediate message processing; runners are self-sufficient
 (see ADR-005), and pipes are independent filesystem-backed entities
-(see pipe-engine ADR).
+(see ADR-010).
 
 As a **message router**, the supervisor watches outbox directories (of both
 agents and pipes) and copies new `.msg` files to the appropriate inbox
@@ -48,8 +48,8 @@ persistently. On system reboot, systemd starts the supervisor, which reads agent
 state from the filesystem and restarts agents that weren't explicitly stopped.
 
 **On-demand (developer machine):** Started automatically by the first
-`loom run --detach` command. Exits when the last managed agent stops. No
-orphan daemon lingers on the developer's machine.
+`loom agent start --detach` command. Exits when the last managed agent stops.
+No orphan daemon lingers on the developer's machine.
 
 ### How the supervisor spawns agents
 
@@ -121,12 +121,12 @@ the agent is considered permanently failed and the supervisor stops restarting i
 When an agent is declared dead (maxRestarts exhausted), the supervisor also writes
 **failure replies** to the agent's `outbox/` for any messages still in
 `inbox/.in-progress/`. Each failure reply builds the `origin` path from the
-orphaned message, with `error: true`. The pipe engine forwards these downstream
+orphaned message, with `error: true`. The pipe runner forwards these downstream
 so fan-in aggregators are not left waiting indefinitely (see ADR-009).
 
 An operator can resume the agent by writing `status: pending` and sending SIGHUP
-to the supervisor, or by running `loom stop {name}` followed by
-`loom run --name {name} --detach`.
+to the supervisor, or by running `loom agent stop {name}` followed by
+`loom agent start {name} --detach`.
 
 ### Visibility
 
@@ -139,7 +139,7 @@ agents/my-agent/
     1742900000-01HX.json   ← each crash is a file
 ```
 
-`loom ps` shows restart count in the status column:
+`loom agent ps` shows restart count in the status column:
 ```
 NAME            STATUS      MODEL           RESTARTS  UPTIME
 my-agent        running     qwen3.5:9b      3         2m
@@ -156,7 +156,7 @@ This follows the pattern used by many Unix daemons (`nginx -s reload`,
 `sshd` config reload): the filesystem holds the config, the signal says
 "look now."
 
-**Starting a new agent (`loom run --detach`):**
+**Starting a new agent (`loom agent start --detach`):**
 
 ```
 1. CLI creates agents/{name}/ directory + config files (model, prompt, etc.)
@@ -172,7 +172,7 @@ If the SIGHUP is missed (supervisor not yet ready, signal lost), the
 supervisor picks up the new agent on its next periodic scan. The signal
 is an optimization, not a requirement.
 
-**Stopping an agent (`loom stop`):**
+**Stopping an agent (`loom agent stop`):**
 
 ```
 1. CLI writes status: stopped to agents/{name}/status
@@ -218,7 +218,7 @@ A systemd unit file template will be provided in `docs/examples/loom-supervisor.
 - The supervisor is itself a single point of failure. If it dies, agents keep running
   but lose restart protection and message routing. Mitigated by running the supervisor
   under systemd (which will restart it).
-- Crash files accumulate. A future `loom gc` command should compact old crash records.
+- Crash files accumulate. `loom gc` compacts old crash records (see ADR-007).
 
 ## Alternatives considered
 
@@ -247,7 +247,5 @@ runners (ADR-005) are simpler and more resilient.
 | Date | Change |
 |---|---|
 | 2026-03-25 | Initial decision. |
-| 2026-03-31 | **Removed `loom restart` command reference.** ADR-006 does not define a `loom restart` command. Replaced with the equivalent operator workflow: write `status: pending` + SIGHUP, or stop + re-run detached. |
-| 2026-03-31 | **Fixed systemd unit file reference.** Changed "is provided" to "will be provided" — the file does not exist yet. |
-| 2026-04-02 | **Added failure reply on agent death.** When maxRestarts is exhausted, the supervisor writes failure replies to the agent's outbox for orphaned `.in-progress/` messages (ADR-009). |
-| 2026-04-03 | **Supervisor role clarified as message router.** Supervisor routes messages between agents and pipes via a routes table. Pipe logic is separate — pipes are named filesystem-backed entities (see pipe-engine ADR). |
+| 2026-04-02 | **Failure signaling on agent death.** When maxRestarts is exhausted, the supervisor writes failure replies to the agent's outbox for orphaned `.in-progress/` messages (ADR-009). Minor fixes: removed `loom restart` reference, corrected systemd unit file to "will be provided". |
+| 2026-04-03 | **Supervisor role clarified as message router.** Supervisor routes messages between agents and pipes via a routes table. Pipe logic is separate — pipes are named filesystem-backed entities (see ADR-010). |

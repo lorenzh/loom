@@ -1,6 +1,6 @@
 # ADR-009: Message origin tracking for multi-agent pipeline correlation
 
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-04-02
 
 ---
@@ -152,7 +152,7 @@ handles this:
    attempts exhausted), the supervisor writes a failure reply to the crashed
    agent's `outbox/`.
 
-The pipe engine then forwards failure replies downstream like any other
+The pipe runner then forwards failure replies downstream like any other
 message. The aggregator sees all expected responses — some successes, some
 failures — and can decide how to proceed. No timeouts and no cross-agent
 directory observation required.
@@ -183,7 +183,7 @@ communication channel — for both success and failure.
 - No new runtime dependencies — `origin` is just a string field
 - Backward compatible — `origin` is optional, existing messages still valid
 - `isMessage()` validation only needs a minor addition for the new field
-- The runner owns origin propagation — the pipe engine copies faithfully
+- The runner owns origin propagation — the pipe runner copies faithfully
 
 **Bad:**
 - The runner must build the `origin` path when writing to outbox. If a
@@ -221,8 +221,5 @@ in favour of deriving the parent from `origin`.
 
 | Date | Change |
 |---|---|
-| 2026-04-02 | Initial draft. |
-| 2026-04-02 | Replaced `.failed/` observation with outbox-based failure signaling. |
-| 2026-04-02 | Changed `origin` from flat filename to slash-delimited path. Runner owns propagation; pipe engine copies faithfully. |
-| 2026-04-02 | Added `error` as top-level Message field (not in body). Documented expected count as application-level. Outbox reply written before `.failed/` move for crash safety. |
-| 2026-04-02 | Removed `in_reply_to`. `origin` subsumes it — last path segment is the parent message. One field, one source of truth. |
+| 2026-04-02 | Initial draft. `origin` as slash-delimited path replacing `in_reply_to`. `error` as top-level field. Outbox-based failure signaling (written before `.failed/` move for crash safety). Runner owns propagation; pipe runner copies faithfully. |
+| 2026-04-03 | **Accepted.** Comprehensive review found no outstanding blockers. Design integrates cleanly with ADR-010 pipe engine and ADR-005 runner architecture. |
