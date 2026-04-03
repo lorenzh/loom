@@ -20,8 +20,10 @@ export interface Message {
   from: string;
   ts: number;
   body: string;
-  /** Inbox filename that triggered this reply — used for idempotent restart recovery. */
-  in_reply_to?: string;
+  /** Slash-delimited path of message filenames tracing this pipeline run. */
+  origin?: string;
+  /** True when this message signals a processing failure. */
+  error?: boolean;
 }
 
 function generateId(): string {
@@ -40,12 +42,13 @@ export function send(root: string, agent: string, from: string, body: string): P
     .then(() => message);
 }
 
-/** Write an outbox message referencing the inbox filename that triggered it. */
+/** Write an outbox message referencing the pipeline origin path. */
 export function sendReply(
   root: string,
   agent: string,
   body: string,
-  inReplyTo: string,
+  origin: string,
+  error?: boolean,
 ): Promise<Message> {
   const id = generateId();
   const ts = Date.now();
@@ -56,7 +59,8 @@ export function sendReply(
     from: agent,
     ts,
     body,
-    in_reply_to: inReplyTo,
+    origin,
+    ...(error ? { error } : {}),
   };
 
   const path = join(root, agent, "outbox", `${ts}-${id}.msg`);
@@ -80,7 +84,8 @@ export function isMessage(obj: unknown): obj is Message {
     typeof obj.ts === "number" &&
     "body" in obj &&
     typeof obj.body === "string" &&
-    (!("in_reply_to" in obj) || typeof (obj as { in_reply_to: unknown }).in_reply_to === "string")
+    (!("origin" in obj) || typeof (obj as { origin: unknown }).origin === "string") &&
+    (!("error" in obj) || typeof (obj as { error: unknown }).error === "boolean")
   );
 }
 
@@ -157,7 +162,7 @@ export async function consume(dir: string, filename: string): Promise<Message> {
  * Recover in-progress messages left by a previous crash.
  *
  * For each file in `inboxDir/.in-progress/`:
- * - If `outboxDir` has a reply with matching `in_reply_to` → acknowledge (move to `.processed/`).
+ * - If `outboxDir` has a reply whose origin's last segment matches → acknowledge (move to `.processed/`).
  * - Otherwise → move back to `inboxDir` for reprocessing.
  */
 export async function recover(inboxDir: string, outboxDir: string): Promise<void> {
@@ -170,7 +175,10 @@ export async function recover(inboxDir: string, outboxDir: string): Promise<void
   const repliedTo = new Set<string>();
   for (const f of outboxFiles) {
     const msg = await read(outboxDir, f);
-    if (msg.in_reply_to) repliedTo.add(msg.in_reply_to);
+    if (msg.origin) {
+      const parent = msg.origin.split("/").pop();
+      if (parent) repliedTo.add(parent);
+    }
   }
 
   for (const filename of inProgressFiles) {
