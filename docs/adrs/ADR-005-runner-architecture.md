@@ -42,9 +42,12 @@ Runner (one per agent)
 
 ### Relationship to supervisor
 
-The supervisor (ADR-004) is a **process manager only**. It spawns runners,
-detects crashes, restarts with backoff, and runs the pipe engine. It does NOT
-mediate messages or own agent state.
+The supervisor (ADR-004) is a **process manager and message router**. It
+spawns runners and pipe processes, detects crashes, restarts with backoff,
+and routes messages between agents and pipes by watching outbox directories
+and copying `.msg` files to inbox directories (see ADR-010). It does NOT
+own agent state or mediate message processing — runners and pipe processes
+handle their own inbox/outbox lifecycle independently.
 
 | Responsibility | Owner |
 |---|---|
@@ -56,7 +59,8 @@ mediate messages or own agent state.
 | Logs and conversation history | Runner |
 | Crash records | Supervisor |
 | Restart logic and backoff | Supervisor |
-| Pipe engine (outbox → inbox copies) | Supervisor |
+| Message routing (outbox → inbox copies) | Supervisor |
+| Pipe process management | Supervisor |
 | Status updates (`restarting`, `dead`) | Supervisor |
 
 ### Three-phase message processing
@@ -133,7 +137,7 @@ that is the LLM's decision.
 ### Incoming error messages
 
 Messages with `"error": true` in the body are **pipeline failure signals** from
-upstream agents (see ADR-009). They arrive via the normal pipe engine flow and
+upstream agents (see ADR-009). They arrive via the normal pipe runner flow and
 indicate that an upstream agent failed to process a message in the same pipeline
 run.
 
@@ -146,11 +150,12 @@ present in a group. The runner does not special-case error messages.
 
 The same runner code supports two modes (see ADR-006):
 
-**Foreground (`loom run`):** Runner starts, polls inbox, streams output to
-the terminal. Ctrl+C stops it. No supervisor involved.
+**Foreground (`loom agent start`):** Runner starts, reads from stdin (if
+`--stdin`), processes through the LLM, writes the response to stdout. Logs
+and errors go to stderr. Ctrl+C stops it. No supervisor involved.
 
-**Managed (`loom run --detach` or `loom up`):** Supervisor spawns the runner
-as a child process. Crash recovery and pipe engine are active.
+**Managed (`loom agent start --detach` or `loom up`):** Supervisor spawns
+the runner as a child process. Crash recovery and message routing are active.
 
 In both modes, the runner's internal logic is identical — only the lifecycle
 management differs.
@@ -159,8 +164,8 @@ management differs.
 
 ### Good
 
-**Runners work standalone.** A single `loom run` command starts a fully
-functional agent without a supervisor. This is ideal for development,
+**Runners work standalone.** A single `loom agent start` command starts a
+fully functional agent without a supervisor. This is ideal for development,
 scripting, and single-agent use cases.
 
 **Clear separation of concerns.** The runner handles agent logic; the
@@ -189,7 +194,8 @@ filesystem. This is acceptable: operators observe agents via
 **Tool execution is invisible to the supervisor.** Tool calls happen
 inside the runner process. They appear in the agent's logs but the
 supervisor has no direct visibility. This is by design — the supervisor
-is a process manager, not a message broker.
+routes messages between agents and pipes but does not inspect or mediate
+message processing within an agent.
 
 ## Alternatives considered
 
@@ -218,8 +224,5 @@ and tight coupling to the supervisor. Rejected.
 | Date | Change |
 |---|---|
 | 2026-03-30 | Initial decision. |
-| 2026-03-31 | **Removed dangling "plugin protocol ADR" reference.** The tool execution protocol is described inline in this ADR. A separate plugin protocol ADR may be added in the future if the protocol warrants its own decision record. |
-| 2026-04-01 | **Added sequential processing.** The runner uses a drain queue to ensure FIFO, one-at-a-time message processing. Only one LLM call is in flight per agent at any time. |
-| 2026-04-01 | **`sendReply` drops the `from` parameter.** Replies always originate from the agent itself; `from` is derived from `agent` internally. |
-| 2026-04-02 | **Added outbox failure reply on processing failure.** When all retries are exhausted, the runner writes a failure reply to `outbox/` in addition to moving to `.failed/` (ADR-009). |
-| 2026-04-02 | **Error messages processed by LLM.** Incoming `"error": true` messages go through normal processing. The LLM decides how to handle failures (e.g. partial fan-in results). |
+| 2026-04-01 | **Sequential processing and API cleanup.** Runner uses a drain queue for FIFO one-at-a-time processing. `sendReply` drops the `from` parameter (derived from agent name). Removed dangling plugin protocol ADR reference. |
+| 2026-04-03 | **Failure signaling and supervisor alignment.** Outbox failure replies on exhausted retries (ADR-009). Error messages (`"error": true`) processed by LLM like normal messages. Supervisor described as process manager and message router (ADR-004, ADR-010). |

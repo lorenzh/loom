@@ -1,8 +1,7 @@
-# Filesystem as State Store
+# ADR-012: Filesystem as State Store
 
-**Status:** Draft
-**Date:** 2026-03-26
-**Author:** Lorenz Hilpert
+**Status:** Accepted
+**Date:** 2026-04-03
 
 ---
 
@@ -36,34 +35,59 @@ file can be read and written independently with standard Unix tools.
 ├── config.json              # global configuration
 ├── plugins/                 # installed plugins (executables)
 ├── supervisor.pid           # supervisor OS PID (if running)
-├── pipes/                   # pipe tracking logs (see pipe-engine ADR)
-└── agents/
-    └── <name>/              # one directory per agent
-        ├── pid              # plain text — current OS process ID, empty if not running
-        ├── status           # plain text — running | idle | stopped | dead | error | restarting
-        ├── model            # plain text — model identifier in use
-        ├── started_at       # plain text — ISO 8601 timestamp
-        ├── stopped_at       # plain text — ISO 8601 timestamp, empty if still running
-        ├── env              # KEY=VALUE environment variables
-        ├── cwd -> <path>    # symlink to working directory
-        ├── prompt.md        # system prompt
-        ├── inbox/           # incoming messages as .msg files
+├── routes.json              # active routing table (see ADR-010)
+├── agents/
+│   └── <name>/              # one directory per agent
+│       ├── pid              # plain text — current OS process ID, empty if not running
+│       ├── status           # plain text — running | idle | stopped | dead | error | restarting
+│       ├── model            # plain text — model identifier in use
+│       ├── started_at       # plain text — ISO 8601 timestamp
+│       ├── stopped_at       # plain text — ISO 8601 timestamp, empty if still running
+│       ├── env              # KEY=VALUE environment variables
+│       ├── prompt.md        # system prompt
+│       ├── inbox/           # incoming messages as .msg files
+│       │   ├── {ts}-{ulid}.msg
+│       │   ├── .in-progress/    # messages currently being processed
+│       │   ├── .processed/      # successfully processed messages
+│       │   ├── .failed/         # messages that failed after retries (+ .error.json)
+│       │   └── .unreadable/     # messages that could not be parsed
+│       ├── outbox/          # response messages as .msg files
+│       │   └── {ts}-{ulid}.msg
+│       ├── memory/          # persistent memory files
+│       │   ├── MEMORY.md    # index (same format as Claude Code)
+│       │   └── *.md         # individual memory files
+│       ├── conversations/   # conversation history
+│       │   └── <date>.ndjson
+│       ├── logs/            # process logs (ndjson, one file per day)
+│       │   └── <date>.ndjson
+│       └── crashes/         # crash records (one JSON file per crash)
+│           └── {ts}-{ulid}.json
+└── pipes/
+    ├── <name>/              # pipe definition (template) — config only
+    │   └── config.json      # operator chain definition
+    └── <name>~<source>→<dest>/   # pipe instance (a running process, see ADR-010)
+        ├── pid
+        ├── status
+        ├── inbox/
         │   ├── {ts}-{ulid}.msg
-        │   ├── .in-progress/    # messages currently being processed
-        │   ├── .processed/      # successfully processed messages
-        │   ├── .failed/         # messages that failed after retries (+ .error.json)
-        │   └── .unreadable/     # messages that could not be parsed
-        ├── outbox/          # response messages as .msg files
+        │   ├── .in-progress/
+        │   ├── .processed/
+        │   └── .failed/
+        ├── outbox/
         │   └── {ts}-{ulid}.msg
-        ├── memory/          # persistent memory files
-        │   ├── MEMORY.md    # index (same format as Claude Code)
-        │   └── *.md         # individual memory files
-        ├── conversations/   # conversation history
+        ├── logs/
         │   └── <date>.ndjson
-        ├── tools/           # symlinks to available tools/plugins
-        ├── children/        # symlinks to child agent PIDs
-        ├── stdout           # live append-only log
-        └── stderr           # errors and warnings
+        ├── crashes/
+        │   └── {ts}-{ulid}.json
+        ├── steps/           # intermediate message files per operator step
+        │   ├── 0/
+        │   ├── 1/
+        │   └── N/
+        └── state/           # stateful operator internal state
+            ├── dedupe/
+            ├── window/
+            ├── throttle/
+            └── accumulate/
 ```
 
 ### File Formats
@@ -84,15 +108,14 @@ $ cat agents/researcher/pid
 This design lets operators check agent state with `cat` and update it with
 `echo running > status`. No JSON parsing required.
 
-**inbox/\*.msg** — incoming message (see ADR-002 for canonical format):
+**inbox/\*.msg** — incoming message (see ADR-009 for canonical format):
 ```json
 {
   "v": 1,
-  "id": "a3f9c1d2e5b8...",
+  "id": "01JBXYZ9K2",
   "from": "cli",
-  "ts": "2026-03-26T05:01:00.000Z",
-  "body": "Research the history of Unix",
-  "metadata": {}
+  "ts": 1742860000000,
+  "body": "Research the history of Unix"
 }
 ```
 
@@ -100,12 +123,11 @@ This design lets operators check agent state with `cat` and update it with
 ```json
 {
   "v": 1,
-  "id": "b7c4e1f2a9d3...",
+  "id": "01JBXYZ9K3",
   "from": "researcher",
-  "ts": "2026-03-26T05:01:03.000Z",
+  "ts": 1742860003000,
   "origin": "1742860000000-01JBXYZ9K2.msg",
-  "body": "Unix was created at Bell Labs in 1969...",
-  "metadata": {}
+  "body": "Unix was created at Bell Labs in 1969..."
 }
 ```
 
@@ -144,7 +166,7 @@ agents (see ADR-002).
 
 **Everything is inspectable with standard tools.**
 - `cat ~/.loom/agents/researcher/status` — see agent status
-- `tail -f ~/.loom/agents/researcher/logs/2026-03-26.ndjson` — watch live activity
+- `tail -f ~/.loom/agents/researcher/logs/$(date +%F).ndjson` — watch live activity
 - `ls ~/.loom/agents/researcher/inbox/` — see pending tasks
 - `wc -l ~/.loom/agents/researcher/conversations/*.ndjson` — count messages
 
@@ -156,7 +178,7 @@ agents (see ADR-002).
 
 **Debugging is structural.** When an agent behaves unexpectedly, the first step is `ls` and `cat`. The state is all there.
 
-**No running daemon required for inspection.** `loom ps` works even if nothing is running — it reads the status files directly.
+**No running daemon required for inspection.** `loom agent ps` works even if nothing is running — it reads the status files directly.
 
 ### Tricky
 
@@ -217,3 +239,4 @@ One big `agent.json` file. Simple, but:
 |---|---|
 | 2026-03-26 | Initial draft. |
 | 2026-04-02 | **Replaced `in_reply_to` with `origin` in outbox message example.** See ADR-009. |
+| 2026-04-03 | **Updated directory layout.** Added `crashes/`, `logs/` (ndjson) replacing `stdout`/`stderr`. Added `routes.json` at root. Added full pipe instance directory structure (`pipes/<name>~<source>→<dest>/`) with pid, status, inbox, outbox, logs, crashes, state. `ts` field corrected to Unix milliseconds number. Removed `metadata` from message examples — not part of the Message interface. |

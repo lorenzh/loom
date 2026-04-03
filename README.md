@@ -1,46 +1,40 @@
 # loom
 
-> A local-first agent runtime where agents are Unix processes, all state lives in the filesystem, and everything is observable with standard Unix tools.
+> An agent runtime built for transparency. All state lives in the filesystem. Everything is observable with standard Unix tools. Nothing is hidden.
 
-![Status](https://img.shields.io/badge/status-early%20development-orange) 
-[![CI](https://github.com/lorenzh/loom/actions/workflows/ci.yml/badge.svg)](https://github.com/lorenzh/loom/actions/workflows/ci.yml) 
-![License](https://img.shields.io/github/license/lorenzh/loom) 
-
+![Status](https://img.shields.io/badge/status-early%20development-orange)
+[![CI](https://github.com/lorenzh/loom/actions/workflows/ci.yml/badge.svg)](https://github.com/lorenzh/loom/actions/workflows/ci.yml)
+![License](https://img.shields.io/github/license/lorenzh/loom)
 
 **Early development.** Most features described here are not yet implemented. Expect frequent breaking changes.
 
 ---
 
-## The problem with agent frameworks
+## Why loom
 
-Most frameworks treat agents as function calls: input goes in, output comes out, nothing persists. They optimise for demos. When something goes wrong at 3am, there is no process table to inspect, no filesystem to read, no way to understand what happened.
+Agent frameworks today are opaque. State is buried in memory, hidden behind abstractions, and impossible to inspect without framework-specific tooling. When an agent fails, you get a stack trace at best. You rarely get the full picture of what it was doing, what it knew, and where it went wrong.
 
-loom does the opposite.
+They are also heavy. Hundreds of transitive dependencies ship with every install. Each one is an attack surface. For software that has access to your tools, your files, and your APIs, that is a problem.
+
+loom takes a different approach: agents should be transparent, secure, and easy to understand. State is plain files on disk. You can inspect everything with `cat`, `tail`, `grep`, and `ls` — no special tooling, no dashboards, no SDKs. The dependency tree is kept as small as possible because every package you don't ship is a vulnerability you don't have.
+
+Nothing fancy. Just processes and files.
+
+---
 
 ## Core idea
 
-An agent is a Unix process. It has an identity, a status, an inbox, and an outbox. Agents communicate by writing files. The supervisor watches them and restarts on crash. You can observe everything with `cat`, `tail`, `grep`, and `ls`.
+Every agent has an identity, a status, an inbox, and an outbox — all stored as plain files. Agents communicate by writing files. The supervisor watches them and restarts on crash. You can observe, debug, and understand the entire system with `cat`, `tail`, `grep`, and `ls`.
 
-```
-$LOOM_HOME/agents/{name}/
-  pid            # OS process ID of the running runner
-  status         # running | idle | stopped | pending | dead | error | restarting
-  model          # model identifier in use
-  started_at     # ISO 8601 timestamp
-  stopped_at     # ISO 8601 timestamp (empty if still running)
-  inbox/         # incoming messages as .msg files
-    .in-progress/  # messages currently being processed (claimed)
-    .processed/    # successfully processed messages
-    .failed/       # messages that failed after all retries
-    .unreadable/   # messages that could not be parsed
-  outbox/        # outgoing messages as .msg files
-  memory/        # persistent key-value state as .json files
-  logs/          # append-only NDJSON log files, one per day
-  crashes/       # crash records (if any)
-$LOOM_HOME/supervisor.pid   # supervisor process ID
-```
+---
 
-Messages are JSON files named `{timestamp_ms}-{id}.msg`. The timestamp prefix gives human-readable ordering in directory listings.
+## Principles
+
+- **Observable.** `tail -f logs/my-agent` works. `ls inbox/` works. `cat status` works. No proprietary dashboards required.
+- **Minimal dependencies.** A small dependency tree means a small attack surface. Every package you don't ship is a vulnerability you don't have.
+- **Language-agnostic.** The filesystem is the interface. Runners, plugins, and tools can be written in any language — Go, Python, Rust, shell scripts — they all just read and write files.
+- **Crash-resilient.** State lives on disk, not in memory. Inbox messages are not lost when a process dies.
+- **Composable.** Works with the Unix tools you already know: `watch`, `grep`, `jq`, `cron`. No SDK required.
 
 ---
 
@@ -77,34 +71,44 @@ bun run build
 
 > **Local development:** use `bun run loom <command>` instead of `loom <command>` when running from the source repo. The `loom` binary is only available after installing the published npm package.
 
-Two primary commands cover the full lifecycle:
+Agents are Unix filters in foreground mode — stdin in, stdout out:
 
 ```sh
-# Single agent -- foreground (interactive, streams to terminal)
-loom run --name my-agent --model qwen3.5:9b
+# Foreground (interactive, stdin/stdout/stderr)
+loom agent start my-agent --model qwen3.5:9b
 
-# Single agent -- background (supervised, restarts on crash)
-loom run --name my-agent --model qwen3.5:9b --detach
+# Background (supervised, restarts on crash)
+loom agent start my-agent --model qwen3.5:9b --detach
 
 # Multi-agent weave from loom.yml
 loom up
 ```
 
+Compose agents with standard Unix pipes:
+
+```sh
+# Chain models together
+echo "extract action items" | loom agent start my-agent --model qwen3:8b --stdin
+
+cat report.md | loom agent start summarizer --model qwen3:8b --stdin \
+  | loom agent start prioritizer --model qwen3:32b --stdin --system "prioritize by urgency"
+```
+
 Supporting commands:
 
 ```sh
-loom ps                    # list agents and their status
-loom stop <name>           # stop a specific agent
-loom logs <name>           # view agent logs
-loom send <name> <msg>     # send a message to an agent's inbox
-loom down                  # stop all agents started by loom up
+loom agent ps                    # list agents and their status
+loom agent stop <name>           # stop a specific agent
+loom agent logs <name>           # view agent logs
+loom agent send <name> <msg>     # send a message to an agent's inbox
+loom down                        # stop all agents started by loom up
 ```
 
-| Mode | Supervisor | Restart on crash | Pipe engine |
-|------|-----------|-----------------|-------------|
-| `loom run` (foreground) | No | No | No |
-| `loom run --detach` | Yes | Yes | Yes |
-| `loom up` | Yes | Yes | Yes |
+| Mode | Supervisor | Restart on crash | Routing | I/O |
+|------|-----------|-----------------|---------|-----|
+| `loom agent start` (foreground) | No | No | No | stdin/stdout/stderr |
+| `loom agent start --detach` | Yes | Yes | Yes | Filesystem only |
+| `loom up` | Yes | Yes | Yes | Filesystem only |
 
 ---
 
@@ -122,21 +126,32 @@ loom down                  # stop all agents started by loom up
 
 The system has three main components:
 
-**Runner** -- one per agent. A self-sufficient OS process that polls its inbox, calls the LLM, executes tools, writes responses to the outbox, and maintains its own state files. Runners work standalone without a supervisor.
+**Runner** — one per agent. A self-sufficient OS process that polls its inbox, calls the LLM, executes tools, writes responses to the outbox, and maintains its own state files. Runners work standalone without a supervisor.
 
-**Supervisor** -- a process manager. Spawns runners, detects crashes via child process exit events, restarts with exponential backoff, and runs the pipe engine for inter-agent communication. If the supervisor dies, runners keep running -- they just lose restart protection.
+**Pipes** — named, reusable message processors. Each pipe is an array of operators — shell commands (`operator: command`) for stateless work (filter, transform, split) and built-in operators for stateful work (window, dedupe, throttle, accumulate). Pipes have the same filesystem layout as agents (inbox, outbox, steps, state). Every operator step writes its output as a `.msg` file to `steps/N/`, making the entire chain observable.
 
-**Filesystem** -- the source of truth. All state is plain files. The CLI writes to the filesystem; the supervisor reads it. A SIGHUP signal nudges the supervisor to re-scan immediately.
+**Supervisor** — a process manager and message router. Spawns runners and pipes, detects crashes, restarts with exponential backoff. Routes messages between agents and pipes by watching outbox directories and copying `.msg` files to inbox directories per a routes table. If the supervisor dies, runners and pipes keep running — they just lose restart protection and routing.
+
+**Filesystem** — the source of truth. All state is plain files. The CLI writes to the filesystem; the supervisor reads it. A SIGHUP signal nudges the supervisor to re-scan immediately.
+
+Messages flow **agent → (optional pipe) → agent**. Agents declare their inputs with `from`:
+
+```yaml
+agents:
+  - name: writer
+    from:
+      - agent: researcher
+        pipe: finding-filter
+      - agent: editor
+```
 
 ```
-Runner (one per agent)              Supervisor (process manager)
-  ├── polls inbox/ (200ms)            ├── spawns runners
-  ├── claims message → .in-progress/  ├── detects crashes (child exit)
-  ├── calls LLM via provider          ├── restarts with backoff
-  ├── writes response to outbox/      ├── runs pipe engine
-  ├── acknowledges → .processed/      └── writes crash records
-  └── updates status (running/idle)
+agent outbox ──→ [supervisor routes] ──→ pipe inbox ──→ pipe outbox ──→ agent inbox
+                       │                                                    ▲
+                       └──────────── direct (no pipe) ──────────────────────┘
 ```
+
+---
 
 ### Restart policy
 
@@ -164,17 +179,20 @@ Architecture decision records live in [`docs/adrs/`](docs/adrs/).
 | [ADR-004](docs/adrs/ADR-004-supervisor-and-restart-policy.md) | Supervisor and restart policy |
 | [ADR-005](docs/adrs/ADR-005-runner-architecture.md) | Runner architecture |
 | [ADR-006](docs/adrs/ADR-006-cli-and-lifecycle.md) | CLI and agent lifecycle |
+| [ADR-007](docs/adrs/ADR-007-garbage-collection.md) | Garbage collection and archival |
+| [ADR-008](docs/adrs/ADR-008-ollama-model-availability.md) | Ollama model availability |
+| [ADR-009](docs/adrs/ADR-009-message-origin-tracking.md) | Message origin tracking |
+| [ADR-010](docs/adrs/ADR-010-pipe-runner.md) | Pipe runner — named reusable message processors |
+| [ADR-011](docs/adrs/ADR-011-loom-yml-weave-config.md) | loom.yml — declarative weave configuration |
+| [ADR-012](docs/adrs/ADR-012-filesystem-state-store.md) | Filesystem as state store |
+| [ADR-013](docs/adrs/ADR-013-model-routing.md) | Model routing and provider abstraction |
 
 ### Drafts
 
 | Proposal | Title |
 |----------|-------|
-| [loom-yml-weave-config](docs/adrs/drafts/loom-yml-weave-config.md) | loom.yml weave config format |
 | [plugin-model](docs/adrs/drafts/plugin-model.md) | Plugin and extension model |
-| [model-routing](docs/adrs/drafts/model-routing.md) | Model routing and provider abstraction |
-| [filesystem-state-store](docs/adrs/drafts/filesystem-state-store.md) | Filesystem as state store |
 | [plugin-protocol](docs/adrs/drafts/plugin-protocol.md) | Plugin protocol -- tools as executables |
-| [pipe-engine](docs/adrs/drafts/pipe-engine.md) | Pipe engine -- outbox-to-inbox forwarding |
 
 ---
 
