@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { loomHome } from "@losoft/loom-runtime";
 import { down } from "./commands/down";
 import { logs } from "./commands/logs";
 import { ps } from "./commands/ps";
@@ -8,51 +9,81 @@ import { send } from "./commands/send";
 import { stop } from "./commands/stop";
 import { up } from "./commands/up";
 
-/** Resolve $LOOM_HOME, defaulting to ~/.loom. */
-function resolveLoomHome(): string {
-  return process.env.LOOM_HOME ?? `${process.env.HOME}/.loom`;
-}
+type CommandHandler = (args: string[], loomHome: string) => Promise<void>;
 
-const commands: Record<string, (args: string[], loomHome: string) => Promise<void>> = {
-  run,
+const agentCommands: Record<string, CommandHandler> = {
+  start: run,
   ps,
   stop,
-  up,
-  down,
   send,
   logs,
 };
 
-async function main(): Promise<void> {
-  const [command, ...args] = process.argv.slice(2);
+const topLevelCommands: Record<string, CommandHandler> = {
+  up,
+  down,
+};
 
-  if (!command || command === "--help" || command === "-h") {
+async function main(): Promise<void> {
+  const [first, ...rest] = process.argv.slice(2);
+
+  if (!first || first === "--help" || first === "-h") {
     printUsage();
     process.exit(0);
   }
 
-  const handler = commands[command];
+  const home = loomHome();
+
+  // loom agent <subcommand> [args...]
+  if (first === "agent") {
+    const [subcommand, ...args] = rest;
+    if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+      printAgentUsage();
+      process.exit(0);
+    }
+
+    const handler = agentCommands[subcommand];
+    if (!handler) {
+      console.error(`Unknown agent command: ${subcommand}`);
+      printAgentUsage();
+      process.exit(1);
+    }
+
+    await handler(args, home);
+    return;
+  }
+
+  // Top-level commands (up, down)
+  const handler = topLevelCommands[first];
   if (!handler) {
-    console.error(`Unknown command: ${command}`);
+    console.error(`Unknown command: ${first}`);
     printUsage();
     process.exit(1);
   }
 
-  const loomHome = resolveLoomHome();
-  await handler(args, loomHome);
+  await handler(rest, home);
 }
 
 function printUsage(): void {
   console.log(`Usage: loom <command> [options]
 
 Commands:
-  run    Start a single agent
-  up     Start a weave of agents from loom.yml
-  ps     List running agents
-  stop   Stop a specific agent
-  down   Stop all agents from a weave
-  send   Send a message to an agent's inbox
-  logs   View agent logs`);
+  agent <subcommand>   Manage individual agents
+  up                   Start agents from loom.yml
+  down                 Stop all agents from loom.yml
+
+Run 'loom agent --help' for agent subcommands.`);
+}
+
+function printAgentUsage(): void {
+  console.log(`Usage: loom agent <command> [options]
+
+Commands:
+  start <name>   Start an agent
+  ps             List agents
+  stop <name>    Stop an agent
+  send <name>    Send a message to an agent
+  logs <name>    View agent logs`);
 }
 
 main().catch((err) => {
