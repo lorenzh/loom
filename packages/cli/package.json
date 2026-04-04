@@ -10,9 +10,7 @@
     "clean": "rm -rf dist",
     "build": "bun run clean && bun run build:bun && bun run build:node && bun run build:types"
   },
-  "devDependencies": {
-    "@types/node": "^25.5.2"
-  },
+  "devDependencies": {},
   "dependencies": {
     "@losoft/loom-runtime": "workspace:*",
     "@losoft/loom-runner": "workspace:*",

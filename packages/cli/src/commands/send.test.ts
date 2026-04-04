@@ -29,12 +29,12 @@ test("send writes a message with args", async () => {
   expect(msg.body).toBe("hello from args");
 });
 
-test("send writes a message with --stdin", async () => {
+test("send writes a message via --stdin", async () => {
   const originalStdin = process.stdin;
 
-  // Mock process.stdin as an async iterable that yields one chunk
+  // Mock process.stdin as an async iterable yielding a Buffer with trailing newline
   const mockStdin = (async function* () {
-    yield Buffer.from("hello from stdin");
+    yield Buffer.from("hello from stdin\n");
   })();
 
   Object.defineProperty(process, "stdin", {
@@ -59,5 +59,13 @@ test("send writes a message with --stdin", async () => {
 
   const msg = await read(inboxDir, files[0]!);
   expect(msg.from).toBe("cli");
-  expect(msg.body).toBe("hello from stdin");
+  expect(msg.body).toBe("hello from stdin"); // trim() removes trailing \n
+});
+
+test("send throws when agent is missing", async () => {
+  await expect(send([], loomHome)).rejects.toThrow("Usage:");
+});
+
+test("send throws when body is missing", async () => {
+  await expect(send([AGENT], loomHome)).rejects.toThrow("Usage:");
 });

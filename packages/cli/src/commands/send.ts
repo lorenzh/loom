@@ -3,28 +3,25 @@ import { send as sendMsg } from "@losoft/loom-runtime";
 
 /** Send a message to an agent's inbox. */
 export async function send(args: string[], loomHome: string): Promise<void> {
-  const stdinIdx = args.indexOf("--stdin");
-  const useStdin = stdinIdx !== -1;
-
+  const useStdin = args.includes("--stdin");
   const positionalArgs = args.filter((a) => a !== "--stdin");
   const agent = positionalArgs[0];
 
   if (!agent) {
-    console.error("Usage: loom send <agent> <message> [--stdin]");
-    process.exit(1);
+    throw new Error("Usage: loom send <agent> <message> [--stdin]");
   }
 
   let body = "";
 
   if (useStdin) {
     for await (const chunk of process.stdin) {
-      body += chunk;
+      body += (chunk as Buffer).toString("utf8");
     }
+    body = body.trim();
   } else {
     body = (positionalArgs[1] as string | undefined) ?? "";
     if (body === "") {
-      console.error("Usage: loom send <agent> <message> [--stdin]");
-      process.exit(1);
+      throw new Error("Usage: loom send <agent> <message> [--stdin]");
     }
   }
 
