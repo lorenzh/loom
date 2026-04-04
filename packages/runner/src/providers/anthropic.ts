@@ -75,6 +75,7 @@ export class AnthropicProvider implements Provider {
   private readonly baseUrl: string;
   private readonly maxTokens: number;
 
+  /** Creates a new AnthropicProvider with the given options, falling back to env vars. */
   constructor(options?: AnthropicProviderOptions) {
     this.apiKey = options?.apiKey ?? process.env.ANTHROPIC_API_KEY ?? "";
     this.baseUrl = (options?.baseUrl ?? process.env.ANTHROPIC_BASE_URL ?? DEFAULT_BASE_URL).replace(
