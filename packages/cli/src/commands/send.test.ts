@@ -28,3 +28,36 @@ test("send writes a message with args", async () => {
   expect(msg.from).toBe("cli");
   expect(msg.body).toBe("hello from args");
 });
+
+test("send writes a message with --stdin", async () => {
+  const originalStdin = process.stdin;
+
+  // Mock process.stdin as an async iterable that yields one chunk
+  const mockStdin = (async function* () {
+    yield Buffer.from("hello from stdin");
+  })();
+
+  Object.defineProperty(process, "stdin", {
+    value: mockStdin,
+    writable: true,
+    configurable: true,
+  });
+
+  try {
+    await send([AGENT, "--stdin"], loomHome);
+  } finally {
+    Object.defineProperty(process, "stdin", {
+      value: originalStdin,
+      writable: true,
+      configurable: true,
+    });
+  }
+
+  const inboxDir = join(loomHome, "agents", AGENT, "inbox");
+  const files = await list(inboxDir);
+  expect(files).toHaveLength(1);
+
+  const msg = await read(inboxDir, files[0]!);
+  expect(msg.from).toBe("cli");
+  expect(msg.body).toBe("hello from stdin");
+});

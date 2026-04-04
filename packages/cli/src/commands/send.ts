@@ -20,8 +20,6 @@ export async function send(args: string[], loomHome: string): Promise<void> {
     for await (const chunk of process.stdin) {
       body += chunk;
     }
-    // Bun returns Buffer chunks for process.stdin
-    body = body.toString();
   } else {
     body = (positionalArgs[1] as string | undefined) ?? "";
     if (body === "") {
