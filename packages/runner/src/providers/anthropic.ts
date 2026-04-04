@@ -40,6 +40,7 @@ function toAnthropicMessages(messages: ChatMessage[]): AnthropicMessage[] {
         content: [
           {
             type: "tool_result" as const,
+            // toolCallId is required by ChatMessage when role is "tool"; empty string is a caller bug
             tool_use_id: msg.toolCallId ?? "",
             content: msg.content,
           },
@@ -119,7 +120,7 @@ export class AnthropicProvider implements Provider {
         throw new ProviderAuthError("anthropic");
       }
       if (response.status === 404) {
-        throw new ModelNotFoundError("anthropic", model);
+        throw new ModelNotFoundError("anthropic", model, errorMessage);
       }
       throw new Error(`Anthropic API error (${response.status}): ${errorMessage}`);
     }
