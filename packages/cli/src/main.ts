@@ -22,6 +22,7 @@ const agentCommands: Record<string, CommandHandler> = {
 const topLevelCommands: Record<string, CommandHandler> = {
   up,
   down,
+  send,
 };
 
 async function main(): Promise<void> {
@@ -71,6 +72,7 @@ Commands:
   agent <subcommand>   Manage individual agents
   up                   Start agents from loom.yml
   down                 Stop all agents from loom.yml
+  send                 Send a message to an agent
 
 Run 'loom agent --help' for agent subcommands.`);
 }
