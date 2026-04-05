@@ -267,7 +267,11 @@ test("onReply callback is invoked with response text", async () => {
   });
   const runPromise = runner.run();
 
-  await waitForOutbox(join(home, AGENT, "outbox"));
+  // Wait for onReply to fire — not just the outbox file, which appears before onReply is called.
+  const deadline = Date.now() + 2000;
+  while (replies.length === 0 && Date.now() < deadline) {
+    await new Promise<void>((r) => setTimeout(r, 10));
+  }
   runner.stop();
   await runPromise;
 

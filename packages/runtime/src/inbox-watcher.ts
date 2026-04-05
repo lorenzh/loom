@@ -78,6 +78,9 @@ export class InboxWatcher extends EventEmitter<InboxWatcherEventMap> {
 
   /** Starts polling the inbox directory for new files. */
   start(): void {
+    // Timer is intentionally ref'd (not unref'd): keeps the process alive while the runner
+    // is active, including in one-shot --stdin mode where no other handles exist.
+    // Callers must call stop() to allow the process to exit.
     this.timer = setInterval(() => this.poll(), this.pollIntervalMs);
   }
 

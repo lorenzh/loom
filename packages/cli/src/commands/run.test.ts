@@ -144,6 +144,25 @@ test("--stdin sets shutdown state after completion", async () => {
   expect(agent.stoppedAt).toBeTruthy();
 });
 
+test("--stdin ignores pre-existing inbox messages", async () => {
+  // Plant a message in the inbox before running --stdin
+  const { send: sendMsg } = await import("@losoft/loom-runtime");
+  await sendMsg(join(loomHome, "agents"), AGENT, "old", "pre-existing message");
+
+  const written = await captureStdout(() =>
+    withMockStdin("new message", () => run([AGENT, "--model", ECHO_MODEL, "--stdin"], loomHome)),
+  );
+
+  // Only the stdin message should appear in stdout
+  expect(written.join("")).toContain("new message");
+  expect(written.join("")).not.toContain("pre-existing message");
+
+  // Pre-existing message should still be in inbox (untouched)
+  const inboxDir = join(loomHome, "agents", AGENT, "inbox");
+  const remaining = await list(inboxDir);
+  expect(remaining).toHaveLength(1);
+});
+
 test("--stdin throws on empty input", async () => {
   await withMockStdin("   ", async () => {
     await expect(run([AGENT, "--model", ECHO_MODEL, "--stdin"], loomHome)).rejects.toThrow(
