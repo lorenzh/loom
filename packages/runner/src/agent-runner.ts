@@ -16,6 +16,8 @@ export interface AgentRunnerOptions {
   systemPrompt?: string;
   /** Called after each outbox reply is written. */
   onReply?: (text: string) => void;
+  /** When set, only process this specific message file and skip crash recovery. */
+  targetFilename?: string;
 }
 
 /**
@@ -34,6 +36,7 @@ export class AgentRunner {
   private readonly inboxDir: string;
   private readonly systemPrompt: string;
   private readonly onReply?: (text: string) => void;
+  private readonly targetFilename?: string;
   private readonly queue: string[] = [];
   private draining = false;
   private resolveRun: (() => void) | null = null;
@@ -50,11 +53,13 @@ export class AgentRunner {
     this.inboxDir = join(home, agentName, "inbox");
     this.systemPrompt = options?.systemPrompt ?? "";
     this.onReply = options?.onReply;
+    this.targetFilename = options?.targetFilename;
     this.watcher = InboxWatcher.forAgent(home, agentName, {
       pollIntervalMs: options?.pollIntervalMs,
     });
 
     this.watcher.on("message", (filename) => {
+      if (this.targetFilename && filename !== this.targetFilename) return;
       this.queue.push(filename);
       this.drain();
     });
@@ -94,7 +99,9 @@ export class AgentRunner {
   /** Start the agent loop. Returns a Promise that resolves when stop() is called. */
   async run(): Promise<void> {
     this.agent.status = "idle";
-    await recover(this.inboxDir, join(this.home, this.agentName, "outbox"));
+    if (!this.targetFilename) {
+      await recover(this.inboxDir, join(this.home, this.agentName, "outbox"));
+    }
     if (this.stopped) return;
     this.watcher.start();
     return new Promise<void>((resolve) => {

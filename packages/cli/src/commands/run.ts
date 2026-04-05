@@ -95,11 +95,13 @@ export async function run(args: string[], loomHome: string): Promise<void> {
       throw new Error("No input received on stdin");
     }
 
-    await sendMsg(agentsRoot, name, "cli", body);
+    const msg = await sendMsg(agentsRoot, name, "cli", body);
+    const targetFilename = `${msg.ts}-${msg.id}.msg`;
 
     const runner = new AgentRunner(agentsRoot, name, registry, {
       systemPrompt,
       pollIntervalMs: 50,
+      targetFilename,
       onReply: (text) => {
         process.stdout.write(text); // No trailing newline — composable as a Unix filter
         runner.stop();
