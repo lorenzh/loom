@@ -6,8 +6,7 @@
  * When new `.msg` files are found they are validated and emitted as `message`
  * events. Files are NOT moved — lifecycle management (claim / acknowledge /
  * fail) is the responsibility of the consumer. Invalid files are quarantined
- * and emitted as `error` events. The timer is unref'd so it does not prevent
- * the process from exiting.
+ * and emitted as `error` events.
  */
 
 import { EventEmitter } from "node:events";
@@ -79,8 +78,10 @@ export class InboxWatcher extends EventEmitter<InboxWatcherEventMap> {
 
   /** Starts polling the inbox directory for new files. */
   start(): void {
+    // Timer is intentionally ref'd (not unref'd): keeps the process alive while the runner
+    // is active, including in one-shot --stdin mode where no other handles exist.
+    // Callers must call stop() to allow the process to exit.
     this.timer = setInterval(() => this.poll(), this.pollIntervalMs);
-    this.timer.unref();
   }
 
   /** Stops polling the inbox directory. */

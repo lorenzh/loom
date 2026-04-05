@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { type Provider, ProviderRegistry, resolveProvider } from "./provider";
+import {
+  createDefaultRegistry,
+  type Provider,
+  ProviderRegistry,
+  resolveProvider,
+} from "./provider";
 
 test("register and get a provider", () => {
   const registry = new ProviderRegistry();
@@ -78,4 +83,19 @@ test("resolveProvider: unknown prefix throws", () => {
 test("resolveProvider: unregistered provider throws", () => {
   const registry = new ProviderRegistry(); // empty — no ollama registered
   expect(() => resolveProvider("llama3", registry)).toThrow('Provider "ollama" is not registered');
+});
+
+// createDefaultRegistry tests
+
+test("createDefaultRegistry registers anthropic and echo providers", () => {
+  const registry = createDefaultRegistry();
+  expect(registry.get("anthropic")).toBeDefined();
+  expect(registry.get("echo")).toBeDefined();
+});
+
+test("createDefaultRegistry: echo provider works end-to-end", async () => {
+  const registry = createDefaultRegistry();
+  const { provider, modelName } = resolveProvider("echo/test", registry);
+  const response = await provider.chat(modelName, "", [{ role: "user", content: "ping" }]);
+  expect(response.text).toBe("ping");
 });

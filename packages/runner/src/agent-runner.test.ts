@@ -256,6 +256,28 @@ test("recover: reprocesses in-progress message that has no outbox reply", async 
   expect(await list(inboxDir)).toHaveLength(0);
 });
 
+test("onReply callback is invoked with response text", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "ping");
+
+  const replies: string[] = [];
+  const runner = new AgentRunner(home, AGENT, makeRegistry("pong"), {
+    pollIntervalMs: 20,
+    onReply: (text) => replies.push(text),
+  });
+  const runPromise = runner.run();
+
+  // Wait for onReply to fire — not just the outbox file, which appears before onReply is called.
+  const deadline = Date.now() + 2000;
+  while (replies.length === 0 && Date.now() < deadline) {
+    await new Promise<void>((r) => setTimeout(r, 10));
+  }
+  runner.stop();
+  await runPromise;
+
+  expect(replies).toEqual(["pong"]);
+});
+
 test("stop() halts the polling loop", async () => {
   new AgentProcess(home, AGENT);
 

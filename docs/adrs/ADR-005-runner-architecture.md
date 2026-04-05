@@ -154,6 +154,11 @@ The same runner code supports two modes (see ADR-006):
 `--stdin`), processes through the LLM, writes the response to stdout. Logs
 and errors go to stderr. Ctrl+C stops it. No supervisor involved.
 
+In `--stdin` mode the runner targets only the message that was just piped in.
+It skips crash recovery and ignores any other messages already in the inbox.
+This ensures deterministic output — the command echoes exactly what was piped,
+regardless of leftover state from previous runs.
+
 **Managed (`loom agent start --detach` or `loom up`):** Supervisor spawns
 the runner as a child process. Crash recovery and message routing are active.
 
@@ -226,3 +231,4 @@ and tight coupling to the supervisor. Rejected.
 | 2026-03-30 | Initial decision. |
 | 2026-04-01 | **Sequential processing and API cleanup.** Runner uses a drain queue for FIFO one-at-a-time processing. `sendReply` drops the `from` parameter (derived from agent name). Removed dangling plugin protocol ADR reference. |
 | 2026-04-03 | **Failure signaling and supervisor alignment.** Outbox failure replies on exhausted retries (ADR-009). Error messages (`"error": true`) processed by LLM like normal messages. Supervisor described as process manager and message router (ADR-004, ADR-010). |
+| 2026-04-05 | **Stdin mode targets only the piped message.** Runner accepts `targetFilename` option to skip crash recovery and ignore other inbox messages, ensuring deterministic one-shot output. |

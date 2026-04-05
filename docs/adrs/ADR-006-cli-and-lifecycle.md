@@ -70,6 +70,11 @@ loom agent start extractor --model qwen3:8b --stdin < prompt.txt | grep "TODO" |
 The `--stdin` flag reads the message body from stdin. Without `--stdin`,
 the agent starts interactively.
 
+In `--stdin` mode the runner processes only the message that was piped in —
+it skips crash recovery and ignores any pre-existing inbox messages. This
+guarantees that the stdout output corresponds exactly to the stdin input,
+making agents reliable components in shell pipelines.
+
 ### `loom up` — start a weave from `loom.yml`
 
 ```sh
@@ -234,3 +239,4 @@ must be a command, not a function call.
 |---|---|
 | 2026-03-30 | Initial decision. |
 | 2026-04-03 | **CLI redesign: subcommand grouping, Unix filter mode, pipe/route commands.** Replaced `loom run` with `loom agent start`, `loom ps` with `loom agent ps`. Foreground agents are Unix filters (stdin/stdout/stderr, `--stdin` flag). Added `loom pipe create`, `loom route`, `loom unroute`, `loom pipes`, `loom routes`. Updated `loom stop` and `loom down` to cover pipe instances. |
+| 2026-04-05 | **Stdin mode scoped to piped message only.** `--stdin` now targets only the message created from stdin input, skipping crash recovery and pre-existing inbox contents for deterministic pipeline behavior. |
