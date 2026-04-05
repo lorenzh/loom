@@ -1,3 +1,6 @@
+import { AnthropicProvider } from "./providers/anthropic";
+import { EchoProvider } from "./providers/echo";
+
 /** A single message in a conversation turn. */
 export interface ChatMessage {
   role: "user" | "assistant" | "tool";
@@ -40,7 +43,15 @@ export class ProviderRegistry {
   }
 }
 
-const KNOWN_PREFIXES = ["ollama", "anthropic", "openai", "openrouter"] as const;
+/** Create a registry pre-loaded with all built-in providers. */
+export function createDefaultRegistry(): ProviderRegistry {
+  const registry = new ProviderRegistry();
+  registry.register("anthropic", new AnthropicProvider());
+  registry.register("echo", new EchoProvider());
+  return registry;
+}
+
+const KNOWN_PREFIXES = ["ollama", "anthropic", "openai", "openrouter", "echo"] as const;
 
 /** Result of resolving a prefixed model string. */
 export interface ResolvedProvider {

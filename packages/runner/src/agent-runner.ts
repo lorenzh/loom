@@ -14,6 +14,8 @@ export interface AgentRunnerOptions {
   pollIntervalMs?: number;
   /** System prompt sent to the LLM on every turn. */
   systemPrompt?: string;
+  /** Called after each outbox reply is written. */
+  onReply?: (text: string) => void;
 }
 
 /**
@@ -31,6 +33,7 @@ export class AgentRunner {
   private readonly watcher: InboxWatcher;
   private readonly inboxDir: string;
   private readonly systemPrompt: string;
+  private readonly onReply?: (text: string) => void;
   private readonly queue: string[] = [];
   private draining = false;
   private resolveRun: (() => void) | null = null;
@@ -46,6 +49,7 @@ export class AgentRunner {
     this.agent = new AgentProcess(home, agentName);
     this.inboxDir = join(home, agentName, "inbox");
     this.systemPrompt = options?.systemPrompt ?? "";
+    this.onReply = options?.onReply;
     this.watcher = InboxWatcher.forAgent(home, agentName, {
       pollIntervalMs: options?.pollIntervalMs,
     });
@@ -84,6 +88,7 @@ export class AgentRunner {
     await sendReply(this.home, this.agentName, response.text, origin);
     await acknowledge(this.inboxDir, filename);
     this.agent.status = "idle";
+    this.onReply?.(response.text);
   }
 
   /** Start the agent loop. Returns a Promise that resolves when stop() is called. */
