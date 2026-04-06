@@ -10,4 +10,16 @@ export {
   resolveProvider,
   type ToolCall,
 } from "./provider";
-export { AnthropicProvider, type AnthropicProviderOptions, EchoProvider } from "./providers";
+export {
+  AnthropicProvider,
+  type AnthropicProviderOptions,
+  EchoProvider,
+  OllamaProvider,
+  type OllamaProviderOptions,
+  type OpenAiCompatibleConfig,
+  OpenAiCompatibleProvider,
+  OpenAiProvider,
+  type OpenAiProviderOptions,
+  OpenRouterProvider,
+  type OpenRouterProviderOptions,
+} from "./providers";

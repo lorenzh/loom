@@ -1,5 +1,8 @@
 import { AnthropicProvider } from "./providers/anthropic";
 import { EchoProvider } from "./providers/echo";
+import { OllamaProvider } from "./providers/ollama";
+import { OpenAiProvider } from "./providers/openai";
+import { OpenRouterProvider } from "./providers/openrouter";
 
 /** A single message in a conversation turn. */
 export interface ChatMessage {
@@ -48,6 +51,9 @@ export function createDefaultRegistry(): ProviderRegistry {
   const registry = new ProviderRegistry();
   registry.register("anthropic", new AnthropicProvider());
   registry.register("echo", new EchoProvider());
+  registry.register("ollama", new OllamaProvider());
+  registry.register("openai", new OpenAiProvider());
+  registry.register("openrouter", new OpenRouterProvider());
   return registry;
 }
 
