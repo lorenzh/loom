@@ -16,9 +16,10 @@ no clear indication of what went wrong or how to fix it.
 
 ## Decision
 
-The Ollama provider adapter checks the response status before attempting to parse the stream.
-If Ollama returns a 404 with a model-not-found body, the runner throws a structured
-`ModelNotFoundError` immediately — no retry, no auto-pull.
+The Ollama provider adapter extends `OpenAiCompatibleProvider` and calls Ollama's
+OpenAI-compatible `/v1/chat/completions` endpoint (rather than the native `/api/chat`).
+It checks the response status before parsing. If Ollama returns a 404 with a model-not-found
+body, the runner throws a structured `ModelNotFoundError` immediately — no retry, no auto-pull.
 
 The error message is actionable:
 
@@ -71,3 +72,4 @@ to produce a better message.
 | Date | Change |
 |---|---|
 | 2026-04-01 | Initial decision. |
+| 2026-04-06 | Ollama adapter now uses OpenAI-compatible `/v1/chat/completions` instead of native `/api/chat`, via shared `OpenAiCompatibleProvider` base class. Core behaviour unchanged. |

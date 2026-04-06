@@ -81,15 +81,15 @@ function resolveProvider(model: string): { provider: Provider; modelName: string
 All providers are implemented as plain HTTP calls using `fetch()`. No SDKs, no
 external runtime dependencies. This is a hard constraint for `@losoft/loom-runtime`.
 
-Ollama exposes two APIs — a native `/api/chat` and an OpenAI-compatible `/v1/chat/completions`.
-loom uses the *native* `/api/chat` endpoint to avoid coupling the implementation to OpenAI's
-request/response format. The OpenAI-compatible mode remains available as an escape hatch via
-`OPENAI_BASE_URL=http://localhost:11434/v1`.
+Ollama, OpenAI, and OpenRouter all use the OpenAI `/v1/chat/completions` wire format.
+A shared `OpenAiCompatibleProvider` base class handles message conversion, response parsing,
+and error handling. The three built-in subclasses (`OllamaProvider`, `OpenAiProvider`,
+`OpenRouterProvider`) supply provider-specific configuration (base URL, auth headers, error
+hints). The base class is also directly instantiable for custom OpenAI-compatible endpoints
+(e.g. LM Studio, Together, Fireworks) via `loom.config.ts`.
 
 Anthropic does not support the OpenAI format. Its provider adapter calls the Anthropic REST API
-directly (`/v1/messages`), normalising the response into `ChatChunk` internally.
-
-OpenAI and OpenRouter both use the same request format and are called directly via `fetch()`.
+directly (`/v1/messages`), normalising the response into `ChatResponse` internally.
 
 ### Provider interface
 
@@ -247,3 +247,4 @@ common case of one provider per agent. Rejected in favour of prefix-in-model-str
 | 2026-03-25 | Initial draft. |
 | 2026-04-01 | **Provider implementation details.** All providers use plain `fetch()` — no SDKs. Ollama native `/api/chat`, Anthropic `/v1/messages`, OpenAI-compatible escape hatch. Added Ollama multi-model thrashing guidance and deployment pattern table. |
 | 2026-04-03 | **Defined missing types.** Added `ContentPart` (text, image, tool_use, tool_result), `ToolDefinition` (name, description, input_schema), and `tool_use_id` on `ChatMessage`. Noted that providers normalise native formats into these common types. |
+| 2026-04-06 | **Shared OpenAI-compatible base.** Ollama, OpenAI, and OpenRouter now share `OpenAiCompatibleProvider` calling `/v1/chat/completions`. Ollama no longer uses native `/api/chat`. Anthropic remains separate. |
