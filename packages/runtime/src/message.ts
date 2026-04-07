@@ -30,6 +30,7 @@ function generateId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 }
 
+/** Write a message to an agent's inbox. */
 export async function send(
   root: string,
   agent: string,
