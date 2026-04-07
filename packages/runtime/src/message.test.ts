@@ -74,6 +74,28 @@ test("send writes valid JSON to the inbox", async () => {
   expect(raw).toEqual(msg);
 });
 
+test("send creates inbox directory if it does not exist", async () => {
+  const freshRoot = mkdtempSync(join(tmpdir(), "message-fresh-"));
+  try {
+    await send(freshRoot, "new-agent", "sender", "hello");
+    const files = await list(join(freshRoot, "new-agent", "inbox"));
+    expect(files).toHaveLength(1);
+  } finally {
+    rmSync(freshRoot, { recursive: true, force: true });
+  }
+});
+
+test("sendReply creates outbox directory if it does not exist", async () => {
+  const freshRoot = mkdtempSync(join(tmpdir(), "message-fresh-"));
+  try {
+    await sendReply(freshRoot, "new-agent", "reply", "origin.msg");
+    const files = await list(join(freshRoot, "new-agent", "outbox"));
+    expect(files).toHaveLength(1);
+  } finally {
+    rmSync(freshRoot, { recursive: true, force: true });
+  }
+});
+
 // --- list ---
 
 test("list returns empty array for non-existent directory", async () => {
@@ -175,7 +197,6 @@ test("consume reads and moves message to .processed", async () => {
 
 test("sendReply writes outbox message with origin", async () => {
   const outboxDir = join(root, AGENT, "outbox");
-  mkdirSync(outboxDir, { recursive: true });
 
   const msg = await sendReply(root, AGENT, "reply body", "1234-abcd.msg");
 
@@ -191,7 +212,6 @@ test("sendReply writes outbox message with origin", async () => {
 
 test("sendReply writes outbox message with error flag", async () => {
   const outboxDir = join(root, AGENT, "outbox");
-  mkdirSync(outboxDir, { recursive: true });
 
   const msg = await sendReply(root, AGENT, "timeout", "1234-abcd.msg", true);
 

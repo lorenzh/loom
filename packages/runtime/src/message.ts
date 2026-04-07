@@ -30,20 +30,27 @@ function generateId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 }
 
-export function send(root: string, agent: string, from: string, body: string): Promise<Message> {
+/** Write a message to an agent's inbox. */
+export async function send(
+  root: string,
+  agent: string,
+  from: string,
+  body: string,
+): Promise<Message> {
   const id = generateId();
   const ts = Date.now();
 
   const message: Message = { v: MESSAGE_VERSION, id, from, ts, body };
 
-  const path = join(root, agent, "inbox", `${ts}-${id}.msg`);
-  return Bun.file(path)
-    .write(JSON.stringify(message, null, 2))
-    .then(() => message);
+  const inboxDir = join(root, agent, "inbox");
+  await mkdir(inboxDir, { recursive: true });
+  const path = join(inboxDir, `${ts}-${id}.msg`);
+  await Bun.file(path).write(JSON.stringify(message, null, 2));
+  return message;
 }
 
 /** Write an outbox message referencing the pipeline origin path. */
-export function sendReply(
+export async function sendReply(
   root: string,
   agent: string,
   body: string,
@@ -63,10 +70,11 @@ export function sendReply(
     ...(error ? { error } : {}),
   };
 
-  const path = join(root, agent, "outbox", `${ts}-${id}.msg`);
-  return Bun.file(path)
-    .write(JSON.stringify(message, null, 2))
-    .then(() => message);
+  const outboxDir = join(root, agent, "outbox");
+  await mkdir(outboxDir, { recursive: true });
+  const path = join(outboxDir, `${ts}-${id}.msg`);
+  await Bun.file(path).write(JSON.stringify(message, null, 2));
+  return message;
 }
 
 /** Returns true when `obj` conforms to the `Message` shape. */
