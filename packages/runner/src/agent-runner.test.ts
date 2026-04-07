@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentProcess, claim, list, read, send, sendReply } from "@losoft/loom-runtime";
@@ -276,6 +276,108 @@ test("onReply callback is invoked with response text", async () => {
   await runPromise;
 
   expect(replies).toEqual(["pong"]);
+});
+
+test("provider error: writes error reply to outbox and moves message to .failed/", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "trigger failure");
+
+  const registry = new ProviderRegistry();
+  registry.register("ollama", {
+    chat: async () => {
+      throw new Error("model overloaded");
+    },
+  } satisfies Provider);
+
+  const runner = new AgentRunner(home, AGENT, registry, { pollIntervalMs: 20 });
+  const runPromise = runner.run();
+
+  // Wait for the error reply to appear in outbox
+  const outboxDir = join(home, AGENT, "outbox");
+  const outboxFiles = await waitForOutbox(outboxDir);
+  runner.stop();
+  await runPromise;
+
+  // Error reply written to outbox with error: true
+  const reply = await read(outboxDir, outboxFiles[0]!);
+  expect(reply.error).toBe(true);
+  expect(reply.body).toContain("model overloaded");
+
+  // Original message moved to .failed/
+  const inboxDir = join(home, AGENT, "inbox");
+  expect(await list(inboxDir)).toHaveLength(0);
+  const failedFiles = await readdir(join(inboxDir, ".failed"));
+  expect(failedFiles.filter((f) => f.endsWith(".msg"))).toHaveLength(1);
+});
+
+test("provider error: .error.json companion contains error details", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "trigger failure");
+
+  const registry = new ProviderRegistry();
+  registry.register("ollama", {
+    chat: async () => {
+      throw new Error("ProviderAuthError: invalid key");
+    },
+  } satisfies Provider);
+
+  const runner = new AgentRunner(home, AGENT, registry, { pollIntervalMs: 20 });
+  const runPromise = runner.run();
+
+  await waitForOutbox(join(home, AGENT, "outbox"));
+  runner.stop();
+  await runPromise;
+
+  const inboxDir = join(home, AGENT, "inbox");
+  const failedDir = join(inboxDir, ".failed");
+  const failedFiles = await readdir(failedDir);
+  const errorFile = failedFiles.find((f) => f.endsWith(".error.json"));
+  expect(errorFile).toBeDefined();
+
+  const errorJson = JSON.parse(await readFile(join(failedDir, errorFile!), "utf8")) as {
+    ts: string;
+    attempts: number;
+    last_error: string;
+    error_type: string;
+  };
+  expect(errorJson.last_error).toContain("ProviderAuthError: invalid key");
+  expect(errorJson.attempts).toBe(1);
+  expect(errorJson.error_type).toBe("Error");
+});
+
+test("provider error: drain continues processing next message after failure", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "fail this");
+  await new Promise<void>((r) => setTimeout(r, 5));
+  await send(home, AGENT, "user", "succeed this");
+
+  let callCount = 0;
+  const registry = new ProviderRegistry();
+  registry.register("ollama", {
+    chat: async (_model, _system, messages) => {
+      callCount++;
+      if (messages[0]!.content === "fail this") throw new Error("forced failure");
+      return { text: "success" };
+    },
+  } satisfies Provider);
+
+  const runner = new AgentRunner(home, AGENT, registry, { pollIntervalMs: 20 });
+  const runPromise = runner.run();
+
+  // Wait for both outbox messages (error reply + success reply)
+  const outboxDir = join(home, AGENT, "outbox");
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    const files = await list(outboxDir);
+    if (files.length >= 2) break;
+    await new Promise<void>((r) => setTimeout(r, 10));
+  }
+  runner.stop();
+  await runPromise;
+
+  expect(callCount).toBe(2);
+  const outboxFiles = await list(outboxDir);
+  expect(outboxFiles).toHaveLength(2);
 });
 
 test("stop() halts the polling loop", async () => {

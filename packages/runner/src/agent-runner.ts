@@ -3,6 +3,8 @@ import {
   AgentProcess,
   acknowledge,
   claim,
+  type FailError,
+  fail,
   InboxWatcher,
   recover,
   sendReply,
@@ -79,21 +81,38 @@ export class AgentRunner {
     }
   }
 
-  /** Process a single message: claim → LLM → reply → acknowledge. */
+  /** Process a single message: claim → LLM → reply → acknowledge. On failure: error reply → fail(). */
   private async processMessage(filename: string): Promise<void> {
     const message = await claim(this.inboxDir, filename);
     this.agent.status = "running";
 
-    const { provider, modelName } = resolveProvider(this.agent.model, this.registry);
-    const response = await provider.chat(modelName, this.systemPrompt, [
-      { role: "user", content: message.body },
-    ]);
-
     const origin = message.origin ? `${message.origin}/${filename}` : filename;
-    await sendReply(this.home, this.agentName, response.text, origin);
-    await acknowledge(this.inboxDir, filename);
-    this.agent.status = "idle";
-    this.onReply?.(response.text);
+
+    try {
+      const { provider, modelName } = resolveProvider(this.agent.model, this.registry);
+      const response = await provider.chat(modelName, this.systemPrompt, [
+        { role: "user", content: message.body },
+      ]);
+
+      await sendReply(this.home, this.agentName, response.text, origin);
+      await acknowledge(this.inboxDir, filename);
+      this.agent.status = "idle";
+      this.onReply?.(response.text);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const errorType = err instanceof Error ? err.constructor.name : "UnknownError";
+
+      await sendReply(this.home, this.agentName, errorMessage, origin, true);
+
+      const failError: FailError = {
+        ts: new Date().toISOString(),
+        attempts: 1,
+        last_error: errorMessage,
+        error_type: errorType,
+      };
+      await fail(this.inboxDir, filename, failError);
+      this.agent.status = "idle";
+    }
   }
 
   /** Start the agent loop. Returns a Promise that resolves when stop() is called. */
