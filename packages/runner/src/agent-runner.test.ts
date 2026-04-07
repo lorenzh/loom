@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentProcess, claim, list, read, send, sendReply } from "@losoft/loom-runtime";
@@ -334,7 +334,7 @@ test("provider error: .error.json companion contains error details", async () =>
   const errorFile = failedFiles.find((f) => f.endsWith(".error.json"));
   expect(errorFile).toBeDefined();
 
-  const errorJson = JSON.parse(await readFile(join(failedDir, errorFile!), "utf8")) as {
+  const errorJson = JSON.parse(await Bun.file(join(failedDir, errorFile!)).text()) as {
     ts: string;
     attempts: number;
     last_error: string;
