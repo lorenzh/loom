@@ -1,6 +1,7 @@
 /** @file Filesystem-backed agent process state — reads and writes per-agent files under $LOOM_HOME/agents/{name}/. */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { atomicWriteSync } from "./atomic-write";
 
 /** Read a file relative to the agent directory, returning null if missing. */
 function readField(agentDir: string, field: string): string | null {
@@ -10,7 +11,7 @@ function readField(agentDir: string, field: string): string | null {
 }
 
 function writeField(agentDir: string, field: string, value: string): void {
-  writeFileSync(join(agentDir, field), `${value}\n`, "utf8");
+  atomicWriteSync(join(agentDir, field), `${value}\n`);
 }
 
 export type AgentStatus =
