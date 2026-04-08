@@ -115,7 +115,7 @@ afterEach(() => {
 
 ### Commits and PRs
 
-Conventional Commits with gitmoji: `✨ feat:`, `🐛 fix:`, `📝 docs:`, `♻️ refactor:`, `🧪 test:`, `🚀 chore:`, `⚡ perf:`. PRs are squash-merged, so the PR title becomes the commit message.
+Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `perf:`. PRs are squash-merged, so the PR title becomes the commit message.
 
 ### ADRs
 

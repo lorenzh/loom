@@ -48,6 +48,6 @@ Each package builds for both Bun and Node.js targets (`dist/bun/` and `dist/node
 
 - TypeScript strict mode. Biome for linting/formatting (spaces, double quotes, semicolons, trailing commas, 100-char line width).
 - Tests live alongside source as `*.test.ts` files. Tests should verify filesystem state, not just return values.
-- Commits use Conventional Commits with gitmoji (e.g. `✨ feat:`, `🐛 fix:`, `📝 docs:`, `♻️ refactor:`, `🧪 test:`).
+- Commits use Conventional Commits (e.g. `feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
 - Every public function needs a one-line JSDoc comment.
 - Core vs plugin boundary: if it requires an external service or adds a dependency to core, it's a plugin (separate `@losoft/loom-*` package).
