@@ -8,8 +8,9 @@
  * to a `.processed/` subdirectory for auditability.
  */
 
-import { exists, mkdir, readdir, rename, writeFile } from "node:fs/promises";
+import { exists, mkdir, readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
+import { atomicWrite } from "./atomic-write";
 
 const MESSAGE_VERSION = 1;
 
@@ -45,7 +46,7 @@ export async function send(
   const inboxDir = join(root, agent, "inbox");
   await mkdir(inboxDir, { recursive: true });
   const path = join(inboxDir, `${ts}-${id}.msg`);
-  await Bun.file(path).write(JSON.stringify(message, null, 2));
+  await atomicWrite(path, JSON.stringify(message, null, 2));
   return message;
 }
 
@@ -73,7 +74,7 @@ export async function sendReply(
   const outboxDir = join(root, agent, "outbox");
   await mkdir(outboxDir, { recursive: true });
   const path = join(outboxDir, `${ts}-${id}.msg`);
-  await Bun.file(path).write(JSON.stringify(message, null, 2));
+  await atomicWrite(path, JSON.stringify(message, null, 2));
   return message;
 }
 
@@ -210,9 +211,5 @@ export async function fail(dir: string, filename: string, error: FailError): Pro
   const failedDir = join(dir, ".failed");
   await mkdir(failedDir, { recursive: true });
   await rename(join(dir, ".in-progress", filename), join(failedDir, filename));
-  await writeFile(
-    join(failedDir, `${filename}.error.json`),
-    JSON.stringify(error, null, 2),
-    "utf8",
-  );
+  await atomicWrite(join(failedDir, `${filename}.error.json`), JSON.stringify(error, null, 2));
 }
