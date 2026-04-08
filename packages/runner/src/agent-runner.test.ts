@@ -324,14 +324,23 @@ test("provider error: .error.json companion contains error details", async () =>
   const runner = new AgentRunner(home, AGENT, registry, { pollIntervalMs: 20 });
   const runPromise = runner.run();
 
-  await waitForOutbox(join(home, AGENT, "outbox"));
-  runner.stop();
-  await runPromise;
-
+  // Poll until .error.json appears in .failed/ — fail() writes it after sendReply
   const inboxDir = join(home, AGENT, "inbox");
   const failedDir = join(inboxDir, ".failed");
-  const failedFiles = await readdir(failedDir);
-  const errorFile = failedFiles.find((f) => f.endsWith(".error.json"));
+  let errorFile: string | undefined;
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    try {
+      const files = await readdir(failedDir);
+      errorFile = files.find((f) => f.endsWith(".error.json"));
+      if (errorFile) break;
+    } catch {
+      /* .failed/ doesn't exist yet */
+    }
+    await new Promise<void>((r) => setTimeout(r, 10));
+  }
+  runner.stop();
+  await runPromise;
   expect(errorFile).toBeDefined();
 
   const errorJson = JSON.parse(await Bun.file(join(failedDir, errorFile!)).text()) as {

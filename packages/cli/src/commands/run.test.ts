@@ -81,6 +81,7 @@ test("creates agent directory with expected structure", async () => {
   expect(existsSync(join(agentDir, "memory"))).toBe(true);
   expect(existsSync(join(agentDir, "logs"))).toBe(true);
   expect(existsSync(join(agentDir, "crashes"))).toBe(true);
+  expect(existsSync(join(agentDir, "conversations"))).toBe(true);
 });
 
 test("writes model file", async () => {
