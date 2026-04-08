@@ -71,6 +71,7 @@ export async function run(args: string[], loomHome: string): Promise<void> {
   agent.model = model;
   agent.pid = process.pid;
   agent.startedAt = new Date().toISOString();
+  agent.status = "running";
   if (systemPrompt) {
     writeFileSync(join(agent.dir, "prompt.md"), systemPrompt, "utf8");
   }
