@@ -198,6 +198,21 @@ test("--prompt sends initial message to inbox", async () => {
   expect(reply.body).toBe("hello agent");
 });
 
+test("foreground mode sets status to running before shutdown", async () => {
+  const runPromise = run([AGENT, "--model", ECHO_MODEL], loomHome);
+
+  // Let the runner start polling
+  await new Promise<void>((r) => setTimeout(r, 50));
+
+  const agent = new AgentProcess(join(loomHome, "agents"), AGENT);
+  expect(agent.status).toBe("running");
+
+  process.emit("SIGINT" as never);
+  await runPromise;
+
+  expect(agent.status).toBe("stopped");
+});
+
 test("foreground mode shuts down cleanly on SIGINT without --prompt", async () => {
   const runPromise = run([AGENT, "--model", ECHO_MODEL], loomHome);
 

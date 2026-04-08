@@ -117,7 +117,6 @@ export class AgentRunner {
 
   /** Start the agent loop. Returns a Promise that resolves when stop() is called. */
   async run(): Promise<void> {
-    this.agent.status = "idle";
     if (!this.targetFilename) {
       await recover(this.inboxDir, join(this.home, this.agentName, "outbox"));
     }
