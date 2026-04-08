@@ -11,11 +11,14 @@
 
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
+import type { AgentLogger } from "./logger";
 import { list, quarantine, read } from "./message";
 
 export interface InboxWatcherOptions {
   /** Polling interval in milliseconds (default 200). */
   pollIntervalMs?: number;
+  /** Optional logger for structured quarantine logging. */
+  logger?: AgentLogger;
 }
 
 interface InboxWatcherEventMap {
@@ -35,6 +38,7 @@ export class InboxWatcher extends EventEmitter<InboxWatcherEventMap> {
   private timer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
   private readonly seen = new Set<string>();
+  private readonly logger?: AgentLogger;
   readonly inbox: string;
   readonly pollIntervalMs: number;
 
@@ -42,6 +46,7 @@ export class InboxWatcher extends EventEmitter<InboxWatcherEventMap> {
     super();
     this.inbox = inbox;
     this.pollIntervalMs = options?.pollIntervalMs ?? 200;
+    this.logger = options?.logger;
   }
 
   /** Runs a single poll cycle: detect new files, validate, emit. */
@@ -66,7 +71,12 @@ export class InboxWatcher extends EventEmitter<InboxWatcherEventMap> {
           this.emit("message", filename);
         } catch (err) {
           await quarantine(this.inbox, filename);
-          this.emit("error", err instanceof Error ? err : new Error(String(err)));
+          const error = err instanceof Error ? err : new Error(String(err));
+          this.logger?.error("unreadable_message", {
+            file: filename,
+            reason: error.message,
+          });
+          this.emit("error", error);
         }
       }
     } catch (err) {

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InboxWatcher } from "./inbox-watcher";
+import { AgentLogger } from "./logger";
 import type { Message } from "./message";
 
 let inbox: string;
@@ -181,4 +182,54 @@ test("forAgent creates watcher for agent inbox path", () => {
 test("pollIntervalMs defaults to 200", () => {
   const defaultWatcher = new InboxWatcher(inbox);
   expect(defaultWatcher.pollIntervalMs).toBe(200);
+});
+
+test("logs unreadable_message event when quarantining with a logger", async () => {
+  const agentDir = mkdtempSync(join(tmpdir(), "inbox-watcher-log-"));
+  const agentInbox = join(agentDir, "inbox");
+  mkdirSync(agentInbox, { recursive: true });
+
+  const logger = new AgentLogger(agentDir);
+  const logWatcher = new InboxWatcher(agentInbox, { pollIntervalMs: 50, logger });
+
+  const errReceived = new Promise<Error>((resolve) => {
+    logWatcher.on("error", (err) => resolve(err));
+  });
+
+  logWatcher.start();
+
+  await Bun.file(join(agentInbox, "bad.msg")).write("not json");
+
+  await errReceived;
+  logWatcher.stop();
+
+  const logsDir = join(agentDir, "logs");
+  const logFiles = readdirSync(logsDir).filter((f) => f.endsWith(".ndjson"));
+  expect(logFiles).toHaveLength(1);
+
+  const lines = readFileSync(join(logsDir, logFiles[0] as string), "utf8")
+    .trim()
+    .split("\n");
+  expect(lines).toHaveLength(1);
+
+  const entry = JSON.parse(lines[0] as string) as Record<string, unknown>;
+  expect(entry.level).toBe("error");
+  expect(entry.event).toBe("unreadable_message");
+  expect(entry.file).toBe("bad.msg");
+  expect(typeof entry.reason).toBe("string");
+
+  rmSync(agentDir, { recursive: true, force: true });
+});
+
+test("quarantine works without a logger (no crash)", async () => {
+  const received = new Promise<Error>((resolve) => {
+    watcher.on("error", (err) => resolve(err));
+  });
+
+  watcher.start();
+  await Bun.file(join(inbox, "bad2.msg")).write("not json");
+
+  const err = await received;
+  expect(err).toBeInstanceOf(Error);
+  expect(existsSync(join(inbox, ".unreadable", "bad2.msg"))).toBe(true);
 });
