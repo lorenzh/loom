@@ -1,4 +1,5 @@
 export { type AgentEntry, AgentProcess, type AgentStatus } from "./agent-process";
+export { atomicWrite, atomicWriteSync } from "./atomic-write";
 export { type CrashRecord, listCrashRecords, writeCrashRecord } from "./crash";
 export { loomHome } from "./env";
 export { InboxWatcher, type InboxWatcherOptions } from "./inbox-watcher";
