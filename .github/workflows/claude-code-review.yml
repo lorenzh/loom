@@ -1,12 +1,16 @@
 name: Claude Code Review
 
 on:
-  pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 jobs:
   claude-review:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
 
     runs-on: ubuntu-latest
     permissions:
@@ -16,9 +20,22 @@ jobs:
       id-token: write
 
     steps:
+      - name: Get PR number
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prs = context.payload.workflow_run.pull_requests;
+            if (!prs || prs.length === 0) {
+              core.setFailed('No pull request found for this workflow run');
+              return;
+            }
+            core.setOutput('number', prs[0].number);
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
       - name: Run Claude Code Review
@@ -28,7 +45,5 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ steps.pr.outputs.number }} --comment'
 
