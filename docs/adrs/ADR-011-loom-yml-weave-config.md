@@ -6,8 +6,8 @@
 ## Context
 
 Running a weave of agents requires coordination: which agents exist, which model each
-uses, how they connect to each other, what triggers them, and what environment they
-get. This configuration needs to live somewhere.
+uses, how they connect to each other, and what environment they get. This configuration
+needs to live somewhere.
 
 Options:
 1. **Imperative CLI** — `loom spawn`, `loom pipe`, `loom route` commands
@@ -23,6 +23,10 @@ a weave of 10 agents over months.
 `loom.yml` (or `loom.yaml`) is the primary way to define a weave. Running `loom up`
 in a directory containing `loom.yml` starts all defined agents and pipe processes and
 wires them together.
+
+loom has no native trigger or scheduler. Agents are woken up by messages arriving in
+their inbox. Anything that can write a message — cron, a shell script, another process,
+or code using the runtime — is a trigger. See [Triggering agents](#triggering-agents).
 
 ### Schema
 
@@ -64,15 +68,6 @@ agents:
       KEY: "${ENV_VAR}"             # expand from shell environment
       KEY2: "literal-value"
 
-    # Triggers: what wakes this agent up
-    # The supervisor evaluates cron schedules and writes a .msg to the
-    # agent's inbox when the schedule fires. The message body is the
-    # value of `message:`. Webhooks are a future extension.
-    triggers:
-      - cron: "0 * * * *"          # standard 5-field cron (local TZ)
-        message: "scan"            # message body sent to inbox on fire
-      - webhook: "/hooks/my-agent" # HTTP POST endpoint (future)
-
     # Message inputs: where this agent receives messages from
     from:
       - agent: other-agent                # direct: other-agent outbox → this inbox
@@ -84,6 +79,66 @@ agents:
       sources: |
         https://news.ycombinator.com
         https://lobste.rs
+```
+
+### Triggering agents
+
+loom does not have a built-in scheduler or trigger system. Agents are woken up by
+messages in their inbox. Use whatever external tool fits:
+
+#### CLI
+
+```bash
+# Send a message to a running agent
+loom send <agent> "<message>"
+
+# Send a multiline or structured message from stdin
+echo '{"task":"triage"}' | loom send <agent> --stdin
+cat report.json | loom send <agent> --stdin
+```
+
+Combine with cron for time-based triggers:
+
+```cron
+# crontab -e
+3 8,20 * * *  loom send issue-triager "triage"
+7 8,20 * * *  loom send pr-reviewer "review open PRs"
+0 9  * * 1    loom send stale-monitor "check stale"
+0 10 * * 5    loom send health-reporter "weekly health check"
+```
+
+Any process that can run a shell command works the same way: systemd timers,
+CI pipelines, Makefiles, Airflow, whatever is already in your stack.
+
+#### Runtime API
+
+For code that needs to trigger agents programmatically:
+
+```ts
+import { send } from "@losoft/loom-runtime";
+
+// send(root, agent, from, body): Promise<Message>
+await send(
+  "/path/to/loom/home/agents",
+  "issue-triager",
+  "my-script",
+  "triage",
+);
+```
+
+`send` writes an atomic `.msg` file to the agent's inbox and returns immediately.
+The agent picks it up on its next poll cycle.
+
+```ts
+export interface Message {
+  v: number;       // schema version
+  id: string;      // unique message id
+  from: string;    // sender name
+  ts: number;      // unix timestamp ms
+  body: string;    // message content
+  origin?: string; // slash-delimited pipeline trace
+  error?: boolean; // true when signalling a processing failure
+}
 ```
 
 ### Pipe operators
@@ -324,8 +379,10 @@ No built-in concept of "environments" — that is shell's job.
 - Pipes are named, reusable, and independently observable processes
 - Conditional fan-out composes from primitives (multiple pipes + filter) — no
   special operator syntax needed
-- Routes and triggers are declared, not wired imperatively — easier to audit
+- Routes are declared, not wired imperatively — easier to audit
 - Duration strings (`30s`, `5m`) are human-readable and unambiguous
+- No built-in scheduler keeps loom small and composable — any external tool
+  can trigger agents via `loom send` or the runtime `send()` API
 
 **Bad:**
 - Dynamic weaves (agents that spawn other agents at runtime) can't be fully
@@ -351,6 +408,11 @@ prompts). Rejected.
 to evaluate. Makes config opaque to non-JS tools. Rejected for v1; may be added as
 `loom.config.ts` in a future release for programmatic weave construction.
 
+**Native triggers in loom.yml:** A `triggers:` block was considered for cron-based
+scheduling. Rejected — loom has no scheduler and shouldn't grow one. Cron, systemd
+timers, CI pipelines, and any code using `send()` are all valid trigger mechanisms
+with no loom involvement required.
+
 ---
 
 ## Changelog
@@ -359,3 +421,4 @@ to evaluate. Makes config opaque to non-JS tools. Rejected for v1; may be added 
 |---|---|
 | 2026-03-25 | Initial draft. |
 | 2026-04-03 | **Complete redesign: named pipes, `from` wiring, command operators.** Pipes are top-level named entities with reusable operator chains. Agents declare inputs via `from` with `agent:` (direct) or `agent:` + `pipe:` (through a pipe). No pipe-to-pipe chaining. Stateless operators unified as `operator: command` (shell commands). Full stateful operator catalog: window, buffer, dedupe, throttle, accumulate, tap. Duration strings (`30s`, `5m`). Shared agent/pipe namespace. Cycle detection at `loom up` time. |
+| 2026-04-08 | **Removed `triggers:` block.** loom has no native scheduler. External triggers use `loom send <agent> <message>` (CLI) or `send()` from `@losoft/loom-runtime` (API). Added Triggering agents section with crontab examples and runtime API signature. |
