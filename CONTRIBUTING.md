@@ -111,25 +111,25 @@ All three must pass before merging. PRs also receive automated code review.
 
 ## Commits
 
-We use [Conventional Commits](https://www.conventionalcommits.org/) with [gitmoji](https://gitmoji.dev/):
+We use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-✨ feat: add inbox watcher polling interval config
-🐛 fix: supervisor restart backoff not resetting after stable run
-📝 docs: add ADR-012 for message deduplication
-♻️ refactor: extract frame parsing into separate module
-🧪 test: add process-table register/deregister cases
+feat: add inbox watcher polling interval config
+fix: supervisor restart backoff not resetting after stable run
+docs: add ADR-012 for message deduplication
+refactor: extract frame parsing into separate module
+test: add process-table register/deregister cases
 ```
 
 Common prefixes: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
 
 ## Pull requests
 
-PRs are squash-merged into `main`, so the **PR title becomes the commit message**. Use the same gitmoji + Conventional Commits format for PR titles:
+PRs are squash-merged into `main`, so the **PR title becomes the commit message**. Use the same Conventional Commits format for PR titles:
 
 ```
-✨ feat: add inbox watcher polling interval config
-🐛 fix: resolve biome lint errors
+feat: add inbox watcher polling interval config
+fix: resolve biome lint errors
 ```
 
 Use the PR body for details — keep the title short (under 70 characters).
