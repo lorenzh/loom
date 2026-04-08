@@ -6,8 +6,9 @@
  * in the agent directory. Each file is named `{timestamp_ns}-{id}.json`.
  */
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { atomicWriteSync } from "./atomic-write";
 
 export interface CrashRecord {
   /** ISO 8601 timestamp of the crash. */
@@ -33,7 +34,7 @@ export function writeCrashRecord(agentDir: string, record: CrashRecord): void {
 
   const tsNs = BigInt(Date.now()) * 1_000_000n;
   const filename = `${tsNs}-${generateSuffix()}.json`;
-  writeFileSync(join(crashesDir, filename), JSON.stringify(record, null, 2), "utf8");
+  atomicWriteSync(join(crashesDir, filename), JSON.stringify(record, null, 2));
 }
 
 /** List all crash records for an agent, sorted chronologically (oldest first). */
