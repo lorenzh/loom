@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { ModelNotFoundError, ProviderAuthError } from "../errors";
+import { ModelNotFoundError, ProviderAuthError, ToolCallParseError } from "../errors";
 import { OpenAiCompatibleProvider } from "./openai-compatible";
 
 const originalFetch = globalThis.fetch;
@@ -145,6 +145,53 @@ test("404 includes hint when modelNotFoundHint is configured", async () => {
   });
   await expect(provider.chat("qwen2.5:3b", "", [{ role: "user", content: "Hi" }])).rejects.toThrow(
     "Run: ollama pull qwen2.5:3b",
+  );
+});
+
+test("malformed tool call arguments throws ToolCallParseError with tool name", async () => {
+  mockFetch(200, {
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: { name: "search", arguments: "{not valid json" },
+            },
+          ],
+        },
+      },
+    ],
+  });
+  const provider = createProvider();
+  const promise = provider.chat("test-model", "", [{ role: "user", content: "Hi" }]);
+  await expect(promise).rejects.toThrow(ToolCallParseError);
+});
+
+test("ToolCallParseError message contains tool name", async () => {
+  mockFetch(200, {
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: { name: "search", arguments: "{not valid json" },
+            },
+          ],
+        },
+      },
+    ],
+  });
+  const provider = createProvider();
+  await expect(provider.chat("test-model", "", [{ role: "user", content: "Hi" }])).rejects.toThrow(
+    "search",
   );
 });
 
