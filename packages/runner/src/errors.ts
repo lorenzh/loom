@@ -6,6 +6,15 @@ export class ProviderAuthError extends Error {
   }
 }
 
+/** Error thrown when a tool call's arguments contain malformed JSON. */
+export class ToolCallParseError extends Error {
+  constructor(toolName: string, raw: string, cause: unknown) {
+    super(`Failed to parse arguments for tool "${toolName}": ${raw}`);
+    this.name = "ToolCallParseError";
+    this.cause = cause;
+  }
+}
+
 /** Error thrown when a requested model does not exist on the provider (HTTP 404). */
 export class ModelNotFoundError extends Error {
   constructor(provider: string, model: string, hint?: string) {

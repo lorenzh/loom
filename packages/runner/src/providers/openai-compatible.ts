@@ -1,4 +1,4 @@
-import { ModelNotFoundError, ProviderAuthError } from "../errors";
+import { ModelNotFoundError, ProviderAuthError, ToolCallParseError } from "../errors";
 import type { ChatMessage, ChatResponse, Provider, ToolCall } from "../provider";
 
 /** Configuration for an OpenAI-compatible provider. */
@@ -47,11 +47,17 @@ function toOpenAiMessages(system: string, messages: ChatMessage[]): Record<strin
 function extractToolCalls(choice: OpenAiChoice): ToolCall[] | undefined {
   const calls = choice.message.tool_calls;
   if (!calls || calls.length === 0) return undefined;
-  return calls.map((tc) => ({
-    id: tc.id,
-    name: tc.function.name,
-    input: JSON.parse(tc.function.arguments) as Record<string, unknown>,
-  }));
+  return calls.map((tc) => {
+    try {
+      return {
+        id: tc.id,
+        name: tc.function.name,
+        input: JSON.parse(tc.function.arguments) as Record<string, unknown>,
+      };
+    } catch (err) {
+      throw new ToolCallParseError(tc.function.name, tc.function.arguments, err);
+    }
+  });
 }
 
 /** Provider for any OpenAI-compatible chat completions API. */
