@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { ProviderAuthError } from "../errors";
 import { OpenAiProvider } from "./openai";
 
 const originalFetch = globalThis.fetch;
@@ -87,4 +88,12 @@ test("trailing slash on baseUrl is stripped", async () => {
   const provider = new OpenAiProvider({ apiKey: "sk-test", baseUrl: "https://api.openai.com/" });
   await provider.chat("gpt-4o", "", [{ role: "user", content: "Hi" }]);
   expect(cap.getRequest().url).toBe("https://api.openai.com/v1/chat/completions");
+});
+
+test("throws ProviderAuthError at construction when no key is provided", () => {
+  expect(() => new OpenAiProvider()).toThrow(ProviderAuthError);
+});
+
+test("throws ProviderAuthError at construction when OPENAI_API_KEY env is not set", () => {
+  expect(() => new OpenAiProvider({})).toThrow(ProviderAuthError);
 });

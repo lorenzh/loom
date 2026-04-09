@@ -1,3 +1,4 @@
+import { ProviderAuthError } from "./errors";
 import { AnthropicProvider } from "./providers/anthropic";
 import { EchoProvider } from "./providers/echo";
 import { OllamaProvider } from "./providers/ollama";
@@ -46,14 +47,23 @@ export class ProviderRegistry {
   }
 }
 
-/** Create a registry pre-loaded with all built-in providers. */
+/** Create a registry pre-loaded with all built-in providers.
+ * Providers that require an API key are skipped silently when no key is available. */
 export function createDefaultRegistry(): ProviderRegistry {
   const registry = new ProviderRegistry();
   registry.register("anthropic", new AnthropicProvider());
   registry.register("echo", new EchoProvider());
   registry.register("ollama", new OllamaProvider());
-  registry.register("openai", new OpenAiProvider());
-  registry.register("openrouter", new OpenRouterProvider());
+  for (const [name, factory] of [
+    ["openai", () => new OpenAiProvider()],
+    ["openrouter", () => new OpenRouterProvider()],
+  ] as [string, () => Provider][]) {
+    try {
+      registry.register(name, factory());
+    } catch (e) {
+      if (!(e instanceof ProviderAuthError)) throw e;
+    }
+  }
   return registry;
 }
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { ProviderAuthError } from "../errors";
 import { OpenRouterProvider } from "./openrouter";
 
 const originalFetch = globalThis.fetch;
@@ -76,4 +77,12 @@ test("X-Title header is sent", async () => {
   await provider.chat("anthropic/claude-sonnet-4-6", "", [{ role: "user", content: "Hi" }]);
   const headers = cap.getRequest().init.headers as Record<string, string>;
   expect(headers["x-title"]).toBe("loom");
+});
+
+test("throws ProviderAuthError at construction when no key is provided", () => {
+  expect(() => new OpenRouterProvider()).toThrow(ProviderAuthError);
+});
+
+test("throws ProviderAuthError at construction when OPENROUTER_API_KEY env is not set", () => {
+  expect(() => new OpenRouterProvider({})).toThrow(ProviderAuthError);
 });
