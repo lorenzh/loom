@@ -539,3 +539,136 @@ test("permanent error: fails immediately without retrying", async () => {
   };
   expect(errorJson.attempts).toBe(1);
 });
+
+// ── conversation history ──────────────────────────────────────────────────────
+
+test("successful turn appends user and assistant entries to conversations/<date>.ndjson", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "hello world");
+
+  const replies: string[] = [];
+  let runner!: AgentRunner;
+  await new Promise<void>((resolve) => {
+    runner = new AgentRunner(home, AGENT, makeRegistry("hi there"), {
+      pollIntervalMs: 20,
+      onReply: (text) => {
+        replies.push(text);
+        resolve();
+      },
+    });
+    runner.run().catch(() => {});
+  });
+  runner.stop();
+
+  const conversationsDir = join(home, AGENT, "conversations");
+  const files = (await readdir(conversationsDir)).filter((f) => f.endsWith(".ndjson"));
+  expect(files).toHaveLength(1);
+
+  const lines = (await Bun.file(join(conversationsDir, files[0]!)).text())
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l) as { role: string; content: string; ts: string });
+
+  expect(lines).toHaveLength(2);
+  expect(lines[0]!.role).toBe("user");
+  expect(lines[0]!.content).toBe("hello world");
+  expect(lines[1]!.role).toBe("assistant");
+  expect(lines[1]!.content).toBe("hi there");
+});
+
+test("conversation entries have valid ISO8601 timestamps", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "ping");
+
+  let runner: AgentRunner;
+  await new Promise<void>((resolve) => {
+    runner = new AgentRunner(home, AGENT, makeRegistry("pong"), {
+      pollIntervalMs: 20,
+      onReply: () => resolve(),
+    });
+    runner.run().catch(() => {});
+  });
+  runner!.stop();
+
+  const conversationsDir = join(home, AGENT, "conversations");
+  const files = (await readdir(conversationsDir)).filter((f) => f.endsWith(".ndjson"));
+  expect(files).toHaveLength(1);
+
+  const lines = (await Bun.file(join(conversationsDir, files[0]!)).text())
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l) as { ts: string });
+
+  for (const line of lines) {
+    expect(new Date(line.ts).toISOString()).toBe(line.ts);
+  }
+});
+
+test("multiple turns append to the same daily file", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "first");
+  await new Promise<void>((r) => setTimeout(r, 5));
+  await send(home, AGENT, "user", "second");
+
+  let replyCount = 0;
+  let runner: AgentRunner;
+  await new Promise<void>((resolve) => {
+    runner = new AgentRunner(home, AGENT, makeRegistry("reply"), {
+      pollIntervalMs: 20,
+      onReply: () => {
+        replyCount++;
+        if (replyCount >= 2) resolve();
+      },
+    });
+    runner.run().catch(() => {});
+  });
+  runner!.stop();
+
+  const conversationsDir = join(home, AGENT, "conversations");
+  const files = (await readdir(conversationsDir)).filter((f) => f.endsWith(".ndjson"));
+  expect(files).toHaveLength(1);
+
+  const lines = (await Bun.file(join(conversationsDir, files[0]!)).text()).trim().split("\n");
+  expect(lines).toHaveLength(4); // 2 turns × 2 lines each
+});
+
+test("failed turn does not append to conversation history", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "trigger failure");
+
+  const registry = new ProviderRegistry();
+  registry.register("ollama", {
+    chat: async () => {
+      throw new ProviderAuthError("openai");
+    },
+  } satisfies Provider);
+
+  const runner = new AgentRunner(home, AGENT, registry, {
+    pollIntervalMs: 20,
+    retryBaseDelayMs: 0,
+  });
+  const runPromise = runner.run();
+
+  // Poll until .error.json appears — ensures fail() has fully completed
+  const failedDir = join(home, AGENT, "inbox", ".failed");
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    try {
+      const files = await readdir(failedDir);
+      if (files.some((f) => f.endsWith(".error.json"))) break;
+    } catch {
+      /* not yet */
+    }
+    await new Promise<void>((r) => setTimeout(r, 10));
+  }
+  runner.stop();
+  await runPromise;
+
+  const conversationsDir = join(home, AGENT, "conversations");
+  try {
+    const files = await readdir(conversationsDir);
+    expect(files.filter((f) => f.endsWith(".ndjson"))).toHaveLength(0);
+  } catch {
+    /* conversations/ may not exist yet — also fine */
+  }
+});

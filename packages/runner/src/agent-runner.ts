@@ -1,3 +1,4 @@
+import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   AgentProcess,
@@ -11,6 +12,22 @@ import {
 } from "@losoft/loom-runtime";
 import { type ProviderRegistry, resolveProvider } from "./provider";
 import { RetryExhaustedError, withRetry } from "./retry";
+
+/** Append a user+assistant turn to the agent's daily conversation file. */
+async function appendConversationTurn(
+  conversationsDir: string,
+  userContent: string,
+  userTs: string,
+  assistantContent: string,
+  assistantTs: string,
+): Promise<void> {
+  const date = new Intl.DateTimeFormat("en-CA").format(new Date());
+  const filePath = join(conversationsDir, `${date}.ndjson`);
+  const lines =
+    `${JSON.stringify({ role: "user", content: userContent, ts: userTs })}\n` +
+    `${JSON.stringify({ role: "assistant", content: assistantContent, ts: assistantTs })}\n`;
+  await appendFile(filePath, lines, "utf8");
+}
 
 export interface AgentRunnerOptions {
   /** Polling interval in milliseconds (default 200). */
@@ -94,6 +111,7 @@ export class AgentRunner {
     const origin = message.origin ? `${message.origin}/${filename}` : filename;
 
     try {
+      const userTs = new Date().toISOString();
       const { provider, modelName } = resolveProvider(this.agent.model, this.registry);
       const response = await withRetry(
         () =>
@@ -101,9 +119,17 @@ export class AgentRunner {
         3,
         this.retryBaseDelayMs,
       );
+      const assistantTs = new Date().toISOString();
 
       await sendReply(this.home, this.agentName, response.text, origin);
       await acknowledge(this.inboxDir, filename);
+      await appendConversationTurn(
+        join(this.home, this.agentName, "conversations"),
+        message.body,
+        userTs,
+        response.text,
+        assistantTs,
+      );
       this.agent.status = "idle";
       this.onReply?.(response.text);
     } catch (err) {
