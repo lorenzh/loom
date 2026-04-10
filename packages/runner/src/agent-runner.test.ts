@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentProcess, claim, list, read, send, sendReply } from "@losoft/loom-runtime";
 import { AgentRunner } from "./agent-runner";
+import { ProviderAuthError } from "./errors";
 import { type Provider, ProviderRegistry } from "./provider";
 
 let home: string;
@@ -289,7 +290,10 @@ test("provider error: writes error reply to outbox and moves message to .failed/
     },
   } satisfies Provider);
 
-  const runner = new AgentRunner(home, AGENT, registry, { pollIntervalMs: 20 });
+  const runner = new AgentRunner(home, AGENT, registry, {
+    pollIntervalMs: 20,
+    retryBaseDelayMs: 0,
+  });
   const runPromise = runner.run();
 
   // Wait for the error reply to appear in outbox
@@ -317,11 +321,14 @@ test("provider error: .error.json companion contains error details", async () =>
   const registry = new ProviderRegistry();
   registry.register("ollama", {
     chat: async () => {
-      throw new Error("ProviderAuthError: invalid key");
+      throw new ProviderAuthError("openai");
     },
   } satisfies Provider);
 
-  const runner = new AgentRunner(home, AGENT, registry, { pollIntervalMs: 20 });
+  const runner = new AgentRunner(home, AGENT, registry, {
+    pollIntervalMs: 20,
+    retryBaseDelayMs: 0,
+  });
   const runPromise = runner.run();
 
   // Poll until .error.json appears in .failed/ — fail() writes it after sendReply
@@ -349,9 +356,9 @@ test("provider error: .error.json companion contains error details", async () =>
     last_error: string;
     error_type: string;
   };
-  expect(errorJson.last_error).toContain("ProviderAuthError: invalid key");
+  expect(errorJson.last_error).toContain('Authentication failed for provider "openai"');
   expect(errorJson.attempts).toBe(1);
-  expect(errorJson.error_type).toBe("Error");
+  expect(errorJson.error_type).toBe("ProviderAuthError");
 });
 
 test("provider error: drain continues processing next message after failure", async () => {
@@ -365,12 +372,15 @@ test("provider error: drain continues processing next message after failure", as
   registry.register("ollama", {
     chat: async (_model, _system, messages) => {
       callCount++;
-      if (messages[0]!.content === "fail this") throw new Error("forced failure");
+      if (messages[0]!.content === "fail this") throw new ProviderAuthError("openai");
       return { text: "success" };
     },
   } satisfies Provider);
 
-  const runner = new AgentRunner(home, AGENT, registry, { pollIntervalMs: 20 });
+  const runner = new AgentRunner(home, AGENT, registry, {
+    pollIntervalMs: 20,
+    retryBaseDelayMs: 0,
+  });
   const runPromise = runner.run();
 
   // Wait for both outbox messages (error reply + success reply)
@@ -399,4 +409,133 @@ test("stop() halts the polling loop", async () => {
 
   // No messages were sent — outbox should be empty
   expect(await list(join(home, AGENT, "outbox"))).toHaveLength(0);
+});
+
+test("transient error: retries and succeeds, no .failed/ entry", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "ping");
+
+  let calls = 0;
+  const registry = new ProviderRegistry();
+  registry.register("ollama", {
+    chat: async () => {
+      calls++;
+      if (calls < 3) throw new Error("transient 503");
+      return { text: "recovered" };
+    },
+  } satisfies Provider);
+
+  const runner = new AgentRunner(home, AGENT, registry, {
+    pollIntervalMs: 20,
+    retryBaseDelayMs: 0,
+  });
+  const runPromise = runner.run();
+
+  const outboxDir = join(home, AGENT, "outbox");
+  const outboxFiles = await waitForOutbox(outboxDir);
+  runner.stop();
+  await runPromise;
+
+  const reply = await read(outboxDir, outboxFiles[0]!);
+  expect(reply.body).toBe("recovered");
+  expect(reply.error).toBeFalsy();
+  expect(calls).toBe(3);
+
+  // Nothing in .failed/
+  const inboxDir = join(home, AGENT, "inbox");
+  try {
+    const failedFiles = await readdir(join(inboxDir, ".failed"));
+    expect(failedFiles.filter((f) => f.endsWith(".msg"))).toHaveLength(0);
+  } catch {
+    /* .failed/ doesn't exist — also fine */
+  }
+});
+
+test("transient error exhausted: .error.json records all 3 attempts", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "trigger");
+
+  const registry = new ProviderRegistry();
+  registry.register("ollama", {
+    chat: async () => {
+      throw new Error("always fails");
+    },
+  } satisfies Provider);
+
+  const runner = new AgentRunner(home, AGENT, registry, {
+    pollIntervalMs: 20,
+    retryBaseDelayMs: 0,
+  });
+  const runPromise = runner.run();
+
+  const inboxDir = join(home, AGENT, "inbox");
+  const failedDir = join(inboxDir, ".failed");
+  let errorFile: string | undefined;
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    try {
+      const files = await readdir(failedDir);
+      errorFile = files.find((f) => f.endsWith(".error.json"));
+      if (errorFile) break;
+    } catch {
+      /* not yet */
+    }
+    await new Promise<void>((r) => setTimeout(r, 10));
+  }
+  runner.stop();
+  await runPromise;
+
+  expect(errorFile).toBeDefined();
+  const errorJson = JSON.parse(await Bun.file(join(failedDir, errorFile!)).text()) as {
+    attempts: number;
+    last_error: string;
+    error_type: string;
+  };
+  expect(errorJson.attempts).toBe(3);
+  expect(errorJson.last_error).toContain("always fails");
+  expect(errorJson.error_type).toBe("Error");
+});
+
+test("permanent error: fails immediately without retrying", async () => {
+  new AgentProcess(home, AGENT);
+  await send(home, AGENT, "user", "trigger");
+
+  let calls = 0;
+  const registry = new ProviderRegistry();
+  registry.register("ollama", {
+    chat: async () => {
+      calls++;
+      throw new ProviderAuthError("openai");
+    },
+  } satisfies Provider);
+
+  const runner = new AgentRunner(home, AGENT, registry, {
+    pollIntervalMs: 20,
+    retryBaseDelayMs: 0,
+  });
+  const runPromise = runner.run();
+
+  const inboxDir = join(home, AGENT, "inbox");
+  const failedDir = join(inboxDir, ".failed");
+  let errorFile: string | undefined;
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    try {
+      const files = await readdir(failedDir);
+      errorFile = files.find((f) => f.endsWith(".error.json"));
+      if (errorFile) break;
+    } catch {
+      /* not yet */
+    }
+    await new Promise<void>((r) => setTimeout(r, 10));
+  }
+  runner.stop();
+  await runPromise;
+
+  expect(calls).toBe(1);
+  expect(errorFile).toBeDefined();
+  const errorJson = JSON.parse(await Bun.file(join(failedDir, errorFile!)).text()) as {
+    attempts: number;
+  };
+  expect(errorJson.attempts).toBe(1);
 });
