@@ -123,13 +123,17 @@ export class AgentRunner {
 
       await sendReply(this.home, this.agentName, response.text, origin);
       await acknowledge(this.inboxDir, filename);
-      await appendConversationTurn(
-        join(this.home, this.agentName, "conversations"),
-        message.body,
-        userTs,
-        response.text,
-        assistantTs,
-      );
+      try {
+        await appendConversationTurn(
+          join(this.home, this.agentName, "conversations"),
+          message.body,
+          userTs,
+          response.text,
+          assistantTs,
+        );
+      } catch {
+        // History write failure must not affect message processing
+      }
       this.agent.status = "idle";
       this.onReply?.(response.text);
     } catch (err) {
