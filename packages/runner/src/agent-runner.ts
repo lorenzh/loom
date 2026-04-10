@@ -10,6 +10,7 @@ import {
   sendReply,
 } from "@losoft/loom-runtime";
 import { type ProviderRegistry, resolveProvider } from "./provider";
+import { RetryExhaustedError, withRetry } from "./retry";
 
 export interface AgentRunnerOptions {
   /** Polling interval in milliseconds (default 200). */
@@ -20,6 +21,8 @@ export interface AgentRunnerOptions {
   onReply?: (text: string) => void;
   /** When set, only process this specific message file and skip crash recovery. */
   targetFilename?: string;
+  /** Base delay in ms for retry backoff (default 1000). Override in tests. */
+  retryBaseDelayMs?: number;
 }
 
 /**
@@ -39,6 +42,7 @@ export class AgentRunner {
   private readonly systemPrompt: string;
   private readonly onReply?: (text: string) => void;
   private readonly targetFilename?: string;
+  private readonly retryBaseDelayMs: number;
   private readonly queue: string[] = [];
   private draining = false;
   private resolveRun: (() => void) | null = null;
@@ -56,6 +60,7 @@ export class AgentRunner {
     this.systemPrompt = options?.systemPrompt ?? "";
     this.onReply = options?.onReply;
     this.targetFilename = options?.targetFilename;
+    this.retryBaseDelayMs = options?.retryBaseDelayMs ?? 1000;
     this.watcher = InboxWatcher.forAgent(home, agentName, {
       pollIntervalMs: options?.pollIntervalMs,
     });
@@ -90,23 +95,29 @@ export class AgentRunner {
 
     try {
       const { provider, modelName } = resolveProvider(this.agent.model, this.registry);
-      const response = await provider.chat(modelName, this.systemPrompt, [
-        { role: "user", content: message.body },
-      ]);
+      const response = await withRetry(
+        () =>
+          provider.chat(modelName, this.systemPrompt, [{ role: "user", content: message.body }]),
+        3,
+        this.retryBaseDelayMs,
+      );
 
       await sendReply(this.home, this.agentName, response.text, origin);
       await acknowledge(this.inboxDir, filename);
       this.agent.status = "idle";
       this.onReply?.(response.text);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      const errorType = err instanceof Error ? err.constructor.name : "UnknownError";
+      const isExhausted = err instanceof RetryExhaustedError;
+      const cause = isExhausted ? err.cause : err;
+      const attempts = isExhausted ? err.attempts : 1;
+      const errorMessage = cause instanceof Error ? cause.message : String(cause);
+      const errorType = cause instanceof Error ? cause.constructor.name : "UnknownError";
 
       await sendReply(this.home, this.agentName, errorMessage, origin, true);
 
       const failError: FailError = {
         ts: new Date().toISOString(),
-        attempts: 1,
+        attempts,
         last_error: errorMessage,
         error_type: errorType,
       };
