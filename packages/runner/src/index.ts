@@ -1,6 +1,13 @@
 export { AgentRunner, type AgentRunnerOptions } from "./agent-runner";
 export { ModelNotFoundError, ProviderAuthError } from "./errors";
 export {
+  type CommandOperatorConfig,
+  type OperatorConfig,
+  type PipeConfig,
+  PipeRunner,
+  type PipeRunnerOptions,
+} from "./pipe-runner";
+export {
   type ChatMessage,
   type ChatResponse,
   createDefaultRegistry,
