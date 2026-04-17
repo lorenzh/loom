@@ -6,8 +6,6 @@
 [![CI](https://github.com/lorenzh/loom/actions/workflows/ci.yml/badge.svg)](https://github.com/lorenzh/loom/actions/workflows/ci.yml)
 ![License](https://img.shields.io/github/license/lorenzh/loom)
 
-**Early development.** Most features described here are not yet implemented. Expect frequent breaking changes.
-
 ---
 
 ## Why loom
@@ -24,7 +22,7 @@ Nothing fancy. Just processes and files.
 
 ## Core idea
 
-Every agent has an identity, a status, an inbox, and an outbox — all stored as plain files. Agents communicate by writing files. The supervisor watches them and restarts on crash. You can observe, debug, and understand the entire system with `cat`, `tail`, `grep`, and `ls`.
+Every agent has an identity, a status, an inbox, and an outbox — all stored as plain files. You can observe, debug, and understand the entire system with `cat`, `tail`, `grep`, and `ls`.
 
 ---
 
@@ -42,9 +40,9 @@ Every agent has an identity, a status, an inbox, and an outbox — all stored as
 
 loom relies on Unix process semantics (POSIX signals, PID-based supervision, file descriptor inheritance). It runs on:
 
-- **Linux** -- x64, arm64
-- **macOS** -- x64, arm64
-- **Windows** -- via [WSL](https://learn.microsoft.com/en-us/windows/wsl/) (use the Linux binary inside WSL)
+- **Linux** — x64, arm64
+- **macOS** — x64, arm64
+- **Windows** — via [WSL](https://learn.microsoft.com/en-us/windows/wsl/) (use the Linux binary inside WSL)
 
 Native Windows is not supported.
 
@@ -65,60 +63,97 @@ bun install
 bun run build
 ```
 
+> **Local development:** use `bun run loom <command>` instead of `loom <command>` when running from the source repo. The `loom` binary is only available after installing the published npm package.
+
 ---
 
 ## CLI
 
-> **Local development:** use `bun run loom <command>` instead of `loom <command>` when running from the source repo. The `loom` binary is only available after installing the published npm package.
-
-Agents are Unix filters in foreground mode — stdin in, stdout out:
+### Agent commands
 
 ```sh
-# Foreground (interactive, stdin/stdout/stderr)
-loom agent start my-agent --model qwen3.5:9b
-
-# Background (supervised, restarts on crash)
-loom agent start my-agent --model qwen3.5:9b --detach
-
-# Multi-agent weave from loom.yml
-loom up
+loom agent start <name> --model <model>            # start agent in foreground (stdin/stdout)
+loom agent start <name> --model <model> --detach   # start agent in background (supervised)
+loom agent ps                                      # list all agents and their status
+loom agent stop <name>                             # stop a running agent
+loom agent logs <name>                             # view agent logs
+loom agent logs <name> --follow                    # stream logs in real time
+loom agent logs <name> --lines 50                  # show last N log entries
+loom send <name> <message>                         # send a message to an agent's inbox
+loom send <name> --stdin                           # read message body from stdin
 ```
 
-Compose agents with standard Unix pipes:
+### Foreground mode (Unix filter)
+
+Agents in foreground mode are Unix filters — stdin in, stdout out. This makes them composable with standard Unix tools:
 
 ```sh
+# Interactive session
+loom agent start my-agent --model ollama/qwen3:8b
+
+# One-shot with piped input
+echo "summarise this" | loom agent start summarizer --model ollama/qwen3:8b --stdin
+
 # Chain models together
-echo "extract action items" | loom agent start my-agent --model qwen3:8b --stdin
-
-cat report.md | loom agent start summarizer --model qwen3:8b --stdin \
-  | loom agent start prioritizer --model qwen3:32b --stdin --system "prioritize by urgency"
+cat report.md | loom agent start summarizer --model ollama/qwen3:8b --stdin \
+  | loom agent start prioritizer --model ollama/qwen3:32b --stdin --system "prioritize by urgency"
 ```
 
-Supporting commands:
+### System prompts
 
 ```sh
-loom agent ps                    # list agents and their status
-loom agent stop <name>           # stop a specific agent
-loom agent logs <name>           # view agent logs
-loom agent send <name> <msg>     # send a message to an agent's inbox
-loom down                        # stop all agents started by loom up
+loom agent start my-agent --model ollama/qwen3:8b --system "You are a helpful assistant."
+loom agent start my-agent --model ollama/qwen3:8b --system-file ./prompts/researcher.md
 ```
-
-| Mode | Supervisor | Restart on crash | Routing | I/O |
-|------|-----------|-----------------|---------|-----|
-| `loom agent start` (foreground) | No | No | No | stdin/stdout/stderr |
-| `loom agent start --detach` | Yes | Yes | Yes | Filesystem only |
-| `loom up` | Yes | Yes | Yes | Filesystem only |
 
 ---
 
-## Why filesystem
+## Filesystem layout
 
-- Any language can read a file. No SDK required to observe an agent.
-- `tail -f logs/my-agent` works. `ls inbox/` works. `cat status` works.
-- State survives process crashes. Inbox messages are not lost.
-- Works offline. No cloud dependency. No API key required to run locally.
-- Composable with Unix tools: `watch`, `grep`, `jq`, `cron`.
+loom stores all state under `$LOOM_HOME` (default: `~/.loom`):
+
+```
+~/.loom/
+  agents/
+    my-agent/
+      status          # idle | running | stopped | dead
+      pid             # current PID (if running)
+      model           # model identifier
+      inbox/          # incoming .msg files
+        *.msg         # pending messages
+        .in-progress/ # message being processed
+        .processed/   # completed messages
+        .failed/      # messages that errored
+      outbox/         # outgoing .msg files
+      logs/           # NDJSON log files (rotated daily)
+      conversations/  # full conversation history
+      memory/         # persistent memory files
+      crashes/        # crash records
+```
+
+Every field is a plain file. Inspect anything with `cat`:
+
+```sh
+cat ~/.loom/agents/my-agent/status
+ls ~/.loom/agents/my-agent/inbox/
+tail -f ~/.loom/agents/my-agent/logs/$(date +%Y-%m-%d).ndjson
+```
+
+---
+
+## Model providers
+
+loom routes models by prefix:
+
+| Prefix | Provider |
+|--------|----------|
+| `anthropic/` | Anthropic API |
+| `openai/` | OpenAI API |
+| `openrouter/` | OpenRouter |
+| `ollama/` | Local Ollama instance |
+| *(bare name)* | Ollama (default) |
+
+Providers are auto-discovered from environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`). For Ollama, no key is needed.
 
 ---
 
@@ -126,32 +161,11 @@ loom down                        # stop all agents started by loom up
 
 The system has three main components:
 
-**Runner** — one per agent. A self-sufficient OS process that polls its inbox, calls the LLM, executes tools, writes responses to the outbox, and maintains its own state files. Runners work standalone without a supervisor.
+**Runner** — one per agent. A self-sufficient OS process that polls its inbox, calls the LLM, writes responses to the outbox, and maintains its own state files. Runners work standalone without a supervisor.
 
-**Pipes** — named, reusable message processors. Each pipe is an array of operators — shell commands (`operator: command`) for stateless work (filter, transform, split) and built-in operators for stateful work (window, dedupe, throttle, accumulate). Pipes have the same filesystem layout as agents (inbox, outbox, steps, state). Every operator step writes its output as a `.msg` file to `steps/N/`, making the entire chain observable.
-
-**Supervisor** — a process manager and message router. Spawns runners and pipes, detects crashes, restarts with exponential backoff. Routes messages between agents and pipes by watching outbox directories and copying `.msg` files to inbox directories per a routes table. If the supervisor dies, runners and pipes keep running — they just lose restart protection and routing.
+**Supervisor** — a process manager. Spawns runners in background mode, detects crashes, and restarts with exponential backoff. If the supervisor dies, runners keep running — they lose restart protection but continue processing messages.
 
 **Filesystem** — the source of truth. All state is plain files. The CLI writes to the filesystem; the supervisor reads it. A SIGHUP signal nudges the supervisor to re-scan immediately.
-
-Messages flow **agent → (optional pipe) → agent**. Agents declare their inputs with `from`:
-
-```yaml
-agents:
-  - name: writer
-    from:
-      - agent: researcher
-        pipe: finding-filter
-      - agent: editor
-```
-
-```
-agent outbox ──→ [supervisor routes] ──→ pipe inbox ──→ pipe outbox ──→ agent inbox
-                       │                                                    ▲
-                       └──────────── direct (no pipe) ──────────────────────┘
-```
-
----
 
 ### Restart policy
 
@@ -162,6 +176,30 @@ delay = min(1s * 2^restartCount, 5m) + jitter(0..500ms)
 ```
 
 After 10 failures within one hour, the agent is marked `dead` and the supervisor stops restarting it.
+
+---
+
+## Current status
+
+loom is in active development. Here is what works today and what is still in progress:
+
+| Feature | Status |
+|---------|--------|
+| `loom agent start` (foreground) | ✅ Working |
+| `loom agent start --detach` (background) | ✅ Working |
+| `loom agent ps` | ✅ Working |
+| `loom agent stop` | ✅ Working |
+| `loom agent logs` / `--follow` | ✅ Working |
+| `loom send` | ✅ Working |
+| Anthropic, OpenAI, OpenRouter, Ollama providers | ✅ Working |
+| Conversation history | ✅ Working |
+| Crash recovery (orphaned message restore) | ✅ Working |
+| Supervisor PID management and signal handling | ✅ Working |
+| Supervisor `scan()` — agent spawn and crash detection | 🚧 In progress (v0.2) |
+| Message routing between agents | 🚧 In progress (v0.2) |
+| `loom.yml` parser and weave configuration | 🚧 In progress (v0.2) |
+| `loom up` / `loom down` | 🚧 In progress (v0.2) |
+| Pipes and operator chains | 📋 Planned |
 
 ---
 
@@ -192,7 +230,7 @@ Architecture decision records live in [`docs/adrs/`](docs/adrs/).
 | Proposal | Title |
 |----------|-------|
 | [plugin-model](docs/adrs/drafts/plugin-model.md) | Plugin and extension model |
-| [plugin-protocol](docs/adrs/drafts/plugin-protocol.md) | Plugin protocol -- tools as executables |
+| [plugin-protocol](docs/adrs/drafts/plugin-protocol.md) | Plugin protocol — tools as executables |
 
 ---
 
