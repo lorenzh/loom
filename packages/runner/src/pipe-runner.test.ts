@@ -73,7 +73,7 @@ test("passes message through a single command operator (cat) to outbox", async (
   expect(outboxFiles).toHaveLength(1);
   const msg = await read(join(instanceDir, "outbox"), outboxFiles[0]!);
   expect(msg.body).toBe('{"value":42}');
-  expect(msg.from).toBe(instanceDir.split("/").pop());
+  expect(msg.from).toBe(instanceDir.split("/").at(-1) ?? "");
   expect(msg.v).toBe(1);
 });
 

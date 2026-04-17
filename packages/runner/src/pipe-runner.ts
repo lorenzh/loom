@@ -229,8 +229,8 @@ export class PipeRunner {
 
     const exitPromise = (async () => {
       const [stdout, , code] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
+        new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
+        new Response(proc.stderr as ReadableStream<Uint8Array>).text(),
         proc.exited,
       ]);
       return { stdout, code };
