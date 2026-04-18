@@ -62,6 +62,7 @@ export class AgentRunner {
   private readonly retryBaseDelayMs: number;
   private readonly queue: string[] = [];
   private draining = false;
+  private drainPromise: Promise<void> = Promise.resolve();
   private resolveRun: (() => void) | null = null;
   private stopped = false;
 
@@ -85,7 +86,7 @@ export class AgentRunner {
     this.watcher.on("message", (filename) => {
       if (this.targetFilename && filename !== this.targetFilename) return;
       this.queue.push(filename);
-      this.drain();
+      this.drainPromise = this.drain();
     });
   }
 
@@ -98,6 +99,10 @@ export class AgentRunner {
         const filename = this.queue.shift();
         if (filename !== undefined) await this.processMessage(filename);
       }
+    } catch {
+      // processMessage has its own error handler. If fail() itself throws
+      // (e.g. ENOENT from a cleanup race), the error reply was already sent —
+      // swallow to prevent unhandled rejections leaking across tests.
     } finally {
       this.draining = false;
     }
@@ -168,11 +173,13 @@ export class AgentRunner {
     });
   }
 
-  /** Stop the polling loop. */
+  /** Stop the polling loop. Resolves run() only after any in-flight drain completes. */
   stop(): void {
     this.stopped = true;
     this.watcher.stop();
-    this.resolveRun?.();
-    this.resolveRun = null;
+    void this.drainPromise.finally(() => {
+      this.resolveRun?.();
+      this.resolveRun = null;
+    });
   }
 }
