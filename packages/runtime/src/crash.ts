@@ -9,6 +9,7 @@
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteSync } from "./atomic-write";
+import { generateId } from "./id";
 
 export interface CrashRecord {
   /** ISO 8601 timestamp of the crash. */
@@ -23,17 +24,13 @@ export interface CrashRecord {
   nextRestartAt: string | null;
 }
 
-function generateSuffix(): string {
-  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-}
-
 /** Write a crash record to the agent's crashes/ directory. */
 export function writeCrashRecord(agentDir: string, record: CrashRecord): void {
   const crashesDir = join(agentDir, "crashes");
   mkdirSync(crashesDir, { recursive: true });
 
   const tsNs = BigInt(Date.now()) * 1_000_000n;
-  const filename = `${tsNs}-${generateSuffix()}.json`;
+  const filename = `${tsNs}-${generateId()}.json`;
   atomicWriteSync(join(crashesDir, filename), JSON.stringify(record, null, 2));
 }
 

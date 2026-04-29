@@ -11,6 +11,7 @@
 import { exists, mkdir, readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicWrite } from "./atomic-write";
+import { generateId } from "./id";
 
 const MESSAGE_VERSION = 1;
 
@@ -25,10 +26,6 @@ export interface Message {
   origin?: string;
   /** True when this message signals a processing failure. */
   error?: boolean;
-}
-
-function generateId(): string {
-  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 }
 
 /** Write a message to an agent's inbox. */
